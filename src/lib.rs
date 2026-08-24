@@ -3,7 +3,7 @@
 
 pub mod telemetry;
 // pub mod config;
-// pub mod indexer;
+pub mod indexer;
 // pub mod mcp;
 
 // Re-export core types
