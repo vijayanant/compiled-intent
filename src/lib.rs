@@ -2,9 +2,10 @@
 //! A Universal Semantic Memory Layer for AI Agents.
 
 pub mod telemetry;
-// pub mod config;
+pub mod config;
+pub mod engine;
 pub mod indexer;
-// pub mod mcp;
+pub mod mcp;
 
 // Re-export core types
 pub use error::ChronicleError;
