@@ -15,13 +15,13 @@ pub mod error {
 
     #[derive(Error, Debug)]
     pub enum ChronicleError {
-        #[error("Database error: {0}")]
-        Database(String),
-        
         #[error("IO error: {0}")]
         Io(#[from] std::io::Error),
-        
-        #[error("Configuration error: {0}")]
-        Config(String),
+        #[error("Database error: {0}")]
+        Database(String),
+        #[error("Network error: {0}")]
+        Network(String),
+        #[error("Internal error: {0}")]
+        Internal(String),
     }
 }

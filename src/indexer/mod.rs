@@ -187,6 +187,7 @@ pub async fn index_adrs(engine: &ChronicleEngine, adr_paths: &[String]) -> Resul
         db.create_table("adrs", reader).execute().await.map_err(|e| ChronicleError::Database(e.to_string()))?;
     }
 
+    std::fs::create_dir_all(&engine.config.chronicle_dir).unwrap_or_default();
     let manifest_json = serde_json::to_string_pretty(&manifest).unwrap();
     std::fs::write(&manifest_path, manifest_json).unwrap();
 
