@@ -53,12 +53,10 @@ pub async fn index_adrs(engine: &ChronicleEngine, adr_paths: &[String]) -> Resul
 
     let mut md_files = Vec::new();
     for adr_path in adr_paths {
-        if let Ok(entries) = std::fs::read_dir(adr_path) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
-                    md_files.push(path);
-                }
+        for entry in walkdir::WalkDir::new(adr_path).into_iter().filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
+                md_files.push(path.to_path_buf());
             }
         }
     }
@@ -71,7 +69,7 @@ pub async fn index_adrs(engine: &ChronicleEngine, adr_paths: &[String]) -> Resul
     // 2. Compute Deltas
     let mut files_to_process = Vec::new();
     for file_path in md_files {
-        let filename = file_path.file_name().unwrap().to_string_lossy().to_string();
+        let filename = file_path.display().to_string();
         let raw_content = std::fs::read_to_string(&file_path)
             .map_err(|e| ChronicleError::Database(format!("Read error: {}", e)))?;
             
@@ -122,29 +120,63 @@ pub async fn index_adrs(engine: &ChronicleEngine, adr_paths: &[String]) -> Resul
     let mut metadatas = Vec::new();
     let mut vectors = Vec::new();
 
+    struct ChunkTask {
+        filename: String,
+        metadata_json: String,
+        new_hash: String,
+        parent_id: String,
+        stored_content: String,
+        c_idx: usize,
+        child_text: String,
+    }
+
+    let mut tasks = Vec::new();
     for (filename, raw_content, new_hash) in files_to_process {
         let (metadata_json, content) = extract_metadata(&raw_content);
         let blocks = markdown_chunker::chunk_markdown(&content);
 
-        for (b_idx, block) in blocks.iter().enumerate() {
+        for (b_idx, block) in blocks.into_iter().enumerate() {
             let parent_id = format!("{}_b{}", filename, b_idx);
             let stored_content = format!("Source: {}\nSection: {}\n\n{}", filename, block.header, block.payload);
 
-            for (c_idx, child_text) in block.children.iter().enumerate() {
-                tracing::debug!("Generating embedding for {} - {} (Child {})", filename, block.header, c_idx);
-                let vector = engine.get_embedding(child_text).await?;
-
-                chunk_ids.push(format!("{}_c{}", parent_id, c_idx));
-                parent_ids.push(parent_id.clone());
-                filenames.push(filename.clone());
-                vector_texts.push(child_text.clone());
-                context_payloads.push(stored_content.clone());
-                metadatas.push(metadata_json.clone());
-                vectors.extend(vector);
+            for (c_idx, child_text) in block.children.into_iter().enumerate() {
+                tasks.push(ChunkTask {
+                    filename: filename.clone(),
+                    metadata_json: metadata_json.clone(),
+                    new_hash: new_hash.clone(),
+                    parent_id: parent_id.clone(),
+                    stored_content: stored_content.clone(),
+                    c_idx,
+                    child_text,
+                });
             }
         }
+    }
+
+    tracing::info!("Generating embeddings for {} total chunks concurrently...", tasks.len());
+    let engine_ref = &engine;
+
+    use futures::stream::{StreamExt, iter};
+    let mut results = iter(tasks)
+        .map(|task| async move {
+            let vec = engine_ref.get_embedding(&task.child_text).await;
+            (task, vec)
+        })
+        .buffer_unordered(16)
+        .collect::<Vec<_>>()
+        .await;
+
+    for (task, vec_result) in results {
+        let vector = vec_result?;
+        chunk_ids.push(format!("{}_c{}", task.parent_id, task.c_idx));
+        parent_ids.push(task.parent_id);
+        filenames.push(task.filename.clone());
+        vector_texts.push(task.child_text);
+        context_payloads.push(task.stored_content);
+        metadatas.push(task.metadata_json);
+        vectors.extend(vector);
         
-        manifest.insert(filename, new_hash);
+        manifest.insert(task.filename, task.new_hash);
     }
 
     tracing::info!("Building Apache Arrow RecordBatch...");
@@ -155,7 +187,7 @@ pub async fn index_adrs(engine: &ChronicleEngine, adr_paths: &[String]) -> Resul
         Field::new("vector_text", DataType::Utf8, false),
         Field::new("context_payload", DataType::Utf8, false),
         Field::new("metadata", DataType::Utf8, false),
-        Field::new("vector", DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float32, true)), 5120), false),
+        Field::new("vector", DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float32, true)), engine.config.embedding_dimensions), false),
     ]));
 
     let chunk_id_array = Arc::new(StringArray::from(chunk_ids));
@@ -167,7 +199,7 @@ pub async fn index_adrs(engine: &ChronicleEngine, adr_paths: &[String]) -> Resul
     
     let vector_values = Float32Array::from(vectors);
     let item_field = Arc::new(Field::new("item", DataType::Float32, true));
-    let vector_array = Arc::new(FixedSizeListArray::try_new(item_field, 5120, Arc::new(vector_values), None)
+    let vector_array = Arc::new(FixedSizeListArray::try_new(item_field, engine.config.embedding_dimensions, Arc::new(vector_values), None)
         .map_err(|e| ChronicleError::Database(format!("Arrow List error: {}", e)))?);
 
     let batch = RecordBatch::try_new(schema.clone(), vec![
