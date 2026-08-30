@@ -27,6 +27,10 @@ struct RpcResponse {
 
 /// The MCP Server router.
 /// Handles the JSON-RPC protocol over Stdio.
+const JSONRPC_METHOD_NOT_FOUND: i32 = -32601;
+const JSONRPC_INVALID_PARAMS: i32 = -32602;
+const JSONRPC_INTERNAL_ERROR: i32 = -32603;
+
 pub struct McpServer {
     engine: ChronicleEngine,
 }
@@ -146,8 +150,8 @@ impl McpServer {
                             }
                         },
                         {
-                            "name": "sync_directory",
-                            "description": "Triggers a differential delta-sync of a directory to invalidate the cache instantly.",
+                            "name": "index_directory",
+                            "description": "Scans a directory for markdown files and updates the semantic LanceDB index.",
                             "inputSchema": {
                                 "type": "object",
                                 "properties": {
@@ -169,13 +173,12 @@ impl McpServer {
                 match name {
                     "search" => {
                         let query = args.get("query").and_then(|q| q.as_str()).unwrap_or("");
+                        let limit = args.get("limit").and_then(|l| l.as_u64()).unwrap_or(3) as usize;
                         tracing::info!("LLM invoked 'search' with query: {}", query);
                         
-                        // Actually use the engine so it's not dead code
-                        if let Ok(_embedding) = self.engine.get_embedding(query).await {
-                            self.send_response(id, json!({ "content": [{ "type": "text", "text": "Search functionality pending engine wiring..." }] }));
-                        } else {
-                            self.send_error(id, -32603, "Failed to generate query embedding");
+                        match self.engine.search(query, limit).await {
+                            Ok(results) => self.send_response(id, json!({ "content": [{ "type": "text", "text": serde_json::to_string_pretty(&results).unwrap() }] })),
+                            Err(e) => self.send_error(id, JSONRPC_INTERNAL_ERROR, &format!("Search failed: {}", e))
                         }
                     }
                     "get_context" => {
@@ -184,22 +187,23 @@ impl McpServer {
                         // TODO: Implement self.engine.get_context(...)
                         self.send_response(id, json!({ "content": [{ "type": "text", "text": "Context expansion pending engine wiring..." }] }));
                     }
-                    "sync_directory" => {
+                    "index_directory" => {
                         let dir = args.get("directory_path").and_then(|q| q.as_str()).unwrap_or("");
-                        tracing::info!("LLM invoked 'sync_directory' for path: {}", dir);
-                        // Delegate to indexer via engine
-                        self.send_response(id, json!({ "content": [{ "type": "text", "text": "Differential sync triggered..." }] }));
+                        tracing::info!("LLM invoked 'index_directory' for path: {}", dir);
+                        
+                        match crate::indexer::index_adrs(&self.engine, &[dir.to_string()]).await {
+                            Ok(_) => self.send_response(id, json!({ "content": [{ "type": "text", "text": "Indexing successful!" }] })),
+                            Err(e) => self.send_error(id, JSONRPC_INTERNAL_ERROR, &format!("Indexing failed: {}", e))
+                        }
                     }
                     _ => {
-                        self.send_error(id, -32601, "Tool not found");
+                        self.send_error(id, JSONRPC_METHOD_NOT_FOUND, "Tool not found");
                     }
                 }
             }
             _ => {
                 tracing::warn!("Unhandled method: {}", req.method);
-                if id != json!(null) {
-                    self.send_error(id, -32601, "Method not found");
-                }
+                self.send_error(id, JSONRPC_METHOD_NOT_FOUND, "Method not supported");
             }
         }
     }
