@@ -210,19 +210,30 @@ pub async fn index_adrs(engine: &ChronicleEngine, adr_paths: &[String]) -> Resul
     let batches = RecordBatchIterator::new(vec![Ok(batch)], schema.clone());
     let reader: Box<dyn RecordBatchReader + Send> = Box::new(batches);
 
-    if table_exists {
+    let table = if table_exists {
         tracing::info!("Appending deltas to LanceDB...");
         let table = db.open_table("adrs").execute().await.map_err(|e| ChronicleError::Database(e.to_string()))?;
         table.add(reader).execute().await.map_err(|e| ChronicleError::Database(e.to_string()))?;
+        table
     } else {
         tracing::info!("Creating new LanceDB table...");
-        db.create_table("adrs", reader).execute().await.map_err(|e| ChronicleError::Database(e.to_string()))?;
-    }
+        db.create_table("adrs", reader).execute().await.map_err(|e| ChronicleError::Database(e.to_string()))?
+    };
 
     std::fs::create_dir_all(&engine.config.chronicle_dir).unwrap_or_default();
     let manifest_json = serde_json::to_string_pretty(&manifest).unwrap();
     std::fs::write(&manifest_path, manifest_json).unwrap();
+    tracing::info!("Indexing complete! Building Full-Text Search (Tantivy) Index...");
 
-    tracing::info!("Delta sync successful!");
+    use lancedb::index::Index;
+    use lancedb::index::scalar::FtsIndexBuilder;
+    
+    table.create_index(&["context_payload"], Index::FTS(FtsIndexBuilder::default()))
+        .execute()
+        .await
+        .map_err(|e| ChronicleError::Database(format!("FTS Index Error: {}", e)))?;
+
+    tracing::info!("Tantivy FTS Index built successfully!");
+
     Ok(())
 }

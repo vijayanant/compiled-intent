@@ -768,6 +768,7 @@ dependencies = [
  "arrow",
  "clap",
  "futures",
+ "lance-index",
  "lancedb",
  "pulldown-cmark",
  "reqwest 0.13.4",

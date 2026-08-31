@@ -184,8 +184,11 @@ impl McpServer {
                     "get_context" => {
                         let chunk_id = args.get("chunk_id").and_then(|q| q.as_str()).unwrap_or("");
                         tracing::info!("LLM invoked 'get_context' for chunk: {}", chunk_id);
-                        // TODO: Implement self.engine.get_context(...)
-                        self.send_response(id, json!({ "content": [{ "type": "text", "text": "Context expansion pending engine wiring..." }] }));
+                        
+                        match self.engine.get_context(chunk_id).await {
+                            Ok(text) => self.send_response(id, json!({ "content": [{ "type": "text", "text": text }] })),
+                            Err(e) => self.send_error(id, JSONRPC_INTERNAL_ERROR, &format!("Context expansion failed: {}", e))
+                        }
                     }
                     "index_directory" => {
                         let dir = args.get("directory_path").and_then(|q| q.as_str()).unwrap_or("");

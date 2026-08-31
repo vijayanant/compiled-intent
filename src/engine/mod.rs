@@ -52,12 +52,15 @@ impl ChronicleEngine {
             .map_err(|e| ChronicleError::Database(e.to_string()))?;
 
         use futures::stream::StreamExt;
-        use lancedb::query::{ExecutableQuery, QueryBase};
+        use lancedb::query::{ExecutableQuery, QueryBase, QueryExecutionOptions};
+        use lance_index::scalar::FullTextSearchQuery;
         
-        let mut stream = table.query().nearest_to(embedding.as_slice())
+        let mut stream = table.query()
+            .full_text_search(FullTextSearchQuery::new(query_text.to_string()))
+            .nearest_to(embedding.as_slice())
             .map_err(|e| ChronicleError::Database(e.to_string()))?
             .limit(limit)
-            .execute()
+            .execute_hybrid(QueryExecutionOptions::default())
             .await
             .map_err(|e| ChronicleError::Database(e.to_string()))?;
 
@@ -70,7 +73,8 @@ impl ChronicleEngine {
                 .and_then(|c| c.as_any().downcast_ref::<arrow::array::StringArray>());
             let chunk_id_col = batch.column_by_name("chunk_id")
                 .and_then(|c| c.as_any().downcast_ref::<arrow::array::StringArray>());
-            let distance_col = batch.column_by_name("_distance")
+            let distance_col = batch.column_by_name("_score")
+                .or_else(|| batch.column_by_name("_distance"))
                 .and_then(|c| c.as_any().downcast_ref::<arrow::array::Float32Array>());
                 
             if let (Some(contexts), Some(chunk_ids)) = (context_col, chunk_id_col) {
@@ -81,7 +85,7 @@ impl ChronicleEngine {
                     });
                     
                     if let Some(distances) = distance_col {
-                        result_json["distance"] = json!(distances.value(i));
+                        result_json["score"] = json!(distances.value(i));
                     }
                     
                     chunks.push(result_json);
@@ -90,6 +94,14 @@ impl ChronicleEngine {
         }
 
         Ok(chunks)
+    }
+
+    pub async fn get_context(&self, chunk_id: &str) -> Result<String, ChronicleError> {
+        // Extract the filename from the chunk_id (e.g., "posts/index.md_b0_c0" -> "posts/index.md")
+        let filename = chunk_id.split("_b").next().unwrap_or(chunk_id);
+        
+        std::fs::read_to_string(filename)
+            .map_err(|e| ChronicleError::Database(format!("Failed to expand context. Could not read source file {}: {}", filename, e)))
     }
 
     
