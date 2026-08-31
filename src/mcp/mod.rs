@@ -124,7 +124,7 @@ impl McpServer {
                     "tools": [
                         {
                             "name": "search",
-                            "description": "Performs a semantic or hybrid search against indexed documents with optional metadata filtering.",
+                            "description": "Performs a semantic or hybrid search against indexed documents. Returns a JSON array of objects with keys: 'chunk_id' (string), 'context' (string), and 'distance' (float). Note: because this uses LanceDB Hybrid Search, the distance metric is derived from Reciprocal Rank Fusion, meaning higher distance scores actually indicate WORSE relevance (a distance of 0.0 is a perfect match).",
                             "inputSchema": {
                                 "type": "object",
                                 "properties": {
@@ -139,7 +139,7 @@ impl McpServer {
                         },
                         {
                             "name": "get_context",
-                            "description": "Resolves a child chunk ID back to its full parent structural context (Parent-Child Retrieval).",
+                            "description": "Resolves a child chunk ID back to its full parent structural context. Returns a single raw string containing the full markdown file content. Use this when a search result looks promising but you need to read the surrounding text before making a decision.",
                             "inputSchema": {
                                 "type": "object",
                                 "properties": {

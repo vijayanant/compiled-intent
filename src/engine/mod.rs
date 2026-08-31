@@ -85,7 +85,7 @@ impl ChronicleEngine {
                     });
                     
                     if let Some(distances) = distance_col {
-                        result_json["score"] = json!(distances.value(i));
+                        result_json["distance"] = json!(distances.value(i));
                     }
                     
                     chunks.push(result_json);
