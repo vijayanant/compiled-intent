@@ -1,9 +1,9 @@
 use clap::{Parser, Subcommand};
 use compiled_intent::config::EngineConfig;
-use compiled_intent::engine::ChronicleEngine;
+use compiled_intent::engine::CompitentEngine;
 
 #[derive(Parser)]
-#[command(name = "chronicle")]
+#[command(name = "intent")]
 #[command(about = "The Universal Semantic Filesystem CLI", long_about = None)]
 struct Cli {
     /// Optional path to config file
@@ -37,7 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     let cli = Cli::parse();
     let config = EngineConfig::load(cli.config);
-    let engine = ChronicleEngine::new(config);
+    let engine = CompitentEngine::new(config);
 
     match &cli.command {
         Commands::Index { path } => {

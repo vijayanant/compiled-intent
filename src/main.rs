@@ -1,12 +1,12 @@
 use compiled_intent::telemetry;
 use compiled_intent::config::EngineConfig;
-use compiled_intent::engine::ChronicleEngine;
+use compiled_intent::engine::CompitentEngine;
 use compiled_intent::mcp::McpServer;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     telemetry::init_tracing();
-    tracing::info!("Chronicle Engine: Booting System Domain...");
+    tracing::info!("Compitent Engine: Booting System Domain...");
     
     // Parse optional --config argument
     let mut args = std::env::args().skip(1);
@@ -18,7 +18,7 @@ async fn main() -> anyhow::Result<()> {
     }
     
     let config = EngineConfig::load(config_path);
-    let engine = ChronicleEngine::new(config);
+    let engine = CompitentEngine::new(config);
     let server = McpServer::new(engine);
 
     server.run().await?;

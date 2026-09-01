@@ -1,7 +1,7 @@
 pub mod markdown_chunker;
 
-use crate::engine::ChronicleEngine;
-use crate::error::ChronicleError;
+use crate::engine::CompitentEngine;
+use crate::error::CompitentError;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -13,6 +13,9 @@ use arrow::array::{
 };
 use arrow::datatypes::{DataType, Field, Schema};
 use lancedb::connect;
+
+const MANIFEST_FILENAME: &str = ".manifest.json";
+const MAX_CONCURRENT_EMBEDDINGS: usize = 16;
 
 fn hash_content(content: &str) -> String {
     let mut hasher = Sha256::new();
@@ -39,11 +42,11 @@ fn extract_metadata(content: &str) -> (String, String) {
     ("{}".to_string(), content.to_string())
 }
 
-pub async fn index_adrs(engine: &ChronicleEngine, adr_paths: &[String]) -> Result<(), ChronicleError> {
+pub async fn index_adrs(engine: &CompitentEngine, adr_paths: &[String]) -> Result<(), CompitentError> {
     tracing::info!("Scanning directories '{:?}' for ADRs...", adr_paths);
 
     // 1. Initialize Differential Sync Manifest
-    let manifest_path = PathBuf::from(&engine.config.lancedb_path).join(".manifest.json");
+    let manifest_path = PathBuf::from(&engine.config.lancedb_path).join(MANIFEST_FILENAME);
     let mut manifest: HashMap<String, String> = if manifest_path.exists() {
         let data = std::fs::read_to_string(&manifest_path).unwrap_or_default();
         serde_json::from_str(&data).unwrap_or_default()
@@ -71,7 +74,7 @@ pub async fn index_adrs(engine: &ChronicleEngine, adr_paths: &[String]) -> Resul
     for file_path in md_files {
         let filename = file_path.display().to_string();
         let raw_content = std::fs::read_to_string(&file_path)
-            .map_err(|e| ChronicleError::Database(format!("Read error: {}", e)))?;
+            .map_err(|e| CompitentError::Database(format!("Read error: {}", e)))?;
             
         let current_hash = hash_content(&raw_content);
         
@@ -95,12 +98,12 @@ pub async fn index_adrs(engine: &ChronicleEngine, adr_paths: &[String]) -> Resul
     let db = connect(&engine.config.lancedb_path)
         .execute()
         .await
-        .map_err(|e| ChronicleError::Database(e.to_string()))?;
+        .map_err(|e| CompitentError::Database(e.to_string()))?;
 
     // 3. Invalidate Stale Cache in LanceDB
-    let table_exists = db.table_names().execute().await.unwrap_or_default().contains(&"adrs".to_string());
+    let table_exists = db.table_names().execute().await.unwrap_or_default().contains(&crate::DEFAULT_TABLE_NAME.to_string());
     if table_exists {
-        if let Ok(table) = db.open_table("adrs").execute().await {
+        if let Ok(table) = db.open_table(crate::DEFAULT_TABLE_NAME).execute().await {
             for (filename, _, _) in &files_to_process {
                 if manifest.contains_key(filename) {
                     tracing::debug!("Removing stale vectors for {}", filename);
@@ -157,12 +160,12 @@ pub async fn index_adrs(engine: &ChronicleEngine, adr_paths: &[String]) -> Resul
     let engine_ref = &engine;
 
     use futures::stream::{StreamExt, iter};
-    let mut results = iter(tasks)
+    let results = iter(tasks)
         .map(|task| async move {
             let vec = engine_ref.get_embedding(&task.child_text).await;
             (task, vec)
         })
-        .buffer_unordered(16)
+        .buffer_unordered(MAX_CONCURRENT_EMBEDDINGS)
         .collect::<Vec<_>>()
         .await;
 
@@ -200,27 +203,27 @@ pub async fn index_adrs(engine: &ChronicleEngine, adr_paths: &[String]) -> Resul
     let vector_values = Float32Array::from(vectors);
     let item_field = Arc::new(Field::new("item", DataType::Float32, true));
     let vector_array = Arc::new(FixedSizeListArray::try_new(item_field, engine.config.embedding_dimensions, Arc::new(vector_values), None)
-        .map_err(|e| ChronicleError::Database(format!("Arrow List error: {}", e)))?);
+        .map_err(|e| CompitentError::Database(format!("Arrow List error: {}", e)))?);
 
     let batch = RecordBatch::try_new(schema.clone(), vec![
         chunk_id_array as _, parent_id_array as _, filename_array as _, 
         vector_text_array as _, context_payload_array as _, metadata_array as _, vector_array as _
-    ]).map_err(|e| ChronicleError::Database(format!("Arrow Batch error: {}", e)))?;
+    ]).map_err(|e| CompitentError::Database(format!("Arrow Batch error: {}", e)))?;
 
     let batches = RecordBatchIterator::new(vec![Ok(batch)], schema.clone());
     let reader: Box<dyn RecordBatchReader + Send> = Box::new(batches);
 
     let table = if table_exists {
         tracing::info!("Appending deltas to LanceDB...");
-        let table = db.open_table("adrs").execute().await.map_err(|e| ChronicleError::Database(e.to_string()))?;
-        table.add(reader).execute().await.map_err(|e| ChronicleError::Database(e.to_string()))?;
+        let table = db.open_table(crate::DEFAULT_TABLE_NAME).execute().await.map_err(|e| CompitentError::Database(e.to_string()))?;
+        table.add(reader).execute().await.map_err(|e| CompitentError::Database(e.to_string()))?;
         table
     } else {
         tracing::info!("Creating new LanceDB table...");
-        db.create_table("adrs", reader).execute().await.map_err(|e| ChronicleError::Database(e.to_string()))?
+        db.create_table(crate::DEFAULT_TABLE_NAME, reader).execute().await.map_err(|e| CompitentError::Database(e.to_string()))?
     };
 
-    std::fs::create_dir_all(&engine.config.chronicle_dir).unwrap_or_default();
+    std::fs::create_dir_all(&engine.config.intent_dir).unwrap_or_default();
     let manifest_json = serde_json::to_string_pretty(&manifest).unwrap();
     std::fs::write(&manifest_path, manifest_json).unwrap();
     tracing::info!("Indexing complete! Building Full-Text Search (Tantivy) Index...");
@@ -231,7 +234,7 @@ pub async fn index_adrs(engine: &ChronicleEngine, adr_paths: &[String]) -> Resul
     table.create_index(&["context_payload"], Index::FTS(FtsIndexBuilder::default()))
         .execute()
         .await
-        .map_err(|e| ChronicleError::Database(format!("FTS Index Error: {}", e)))?;
+        .map_err(|e| CompitentError::Database(format!("FTS Index Error: {}", e)))?;
 
     tracing::info!("Tantivy FTS Index built successfully!");
 

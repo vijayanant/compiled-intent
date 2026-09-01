@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::io::{self, BufRead, Write};
 
-use crate::engine::ChronicleEngine;
-use crate::error::ChronicleError;
+use crate::engine::CompitentEngine;
+use crate::error::CompitentError;
 
 // --- MCP Protocol Types ---
 
@@ -28,21 +28,25 @@ struct RpcResponse {
 /// The MCP Server router.
 /// Handles the JSON-RPC protocol over Stdio.
 const JSONRPC_METHOD_NOT_FOUND: i32 = -32601;
-const JSONRPC_INVALID_PARAMS: i32 = -32602;
 const JSONRPC_INTERNAL_ERROR: i32 = -32603;
 
+const JSONRPC_VERSION: &str = "2.0";
+const PROTOCOL_VERSION: &str = "2024-11-05";
+const SERVER_VERSION: &str = "2.0.0";
+const DEFAULT_SEARCH_LIMIT: usize = 3;
+
 pub struct McpServer {
-    engine: ChronicleEngine,
+    engine: CompitentEngine,
 }
 
 impl McpServer {
-    pub fn new(engine: ChronicleEngine) -> Self {
+    pub fn new(engine: CompitentEngine) -> Self {
         Self { engine }
     }
 
     fn send_response(&self, id: Value, result: Value) {
         let res = RpcResponse {
-            jsonrpc: "2.0".to_string(),
+            jsonrpc: JSONRPC_VERSION.to_string(),
             id,
             result: Some(result),
             error: None,
@@ -53,7 +57,7 @@ impl McpServer {
 
     fn send_error(&self, id: Value, code: i32, message: &str) {
         let res = RpcResponse {
-            jsonrpc: "2.0".to_string(),
+            jsonrpc: JSONRPC_VERSION.to_string(),
             id,
             result: None,
             error: Some(json!({ "code": code, "message": message })),
@@ -63,12 +67,12 @@ impl McpServer {
     }
 
     /// Listens for MCP JSON-RPC messages on Stdin.
-    pub async fn run(&self) -> Result<(), ChronicleError> {
+    pub async fn run(&self) -> Result<(), CompitentError> {
         let stdin = io::stdin();
         let mut handle = stdin.lock();
         let mut buffer = String::new();
 
-        tracing::info!("Chronicle MCP Server starting on Stdio...");
+        tracing::info!("Compitent MCP Server starting on Stdio...");
 
         while handle.read_line(&mut buffer)? > 0 {
             if buffer.trim().is_empty() {
@@ -94,7 +98,7 @@ impl McpServer {
     async fn handle_request(&self, req: RpcRequest) {
         let id = req.id.clone().unwrap_or(json!(null));
 
-        if req.jsonrpc != "2.0" {
+        if req.jsonrpc != JSONRPC_VERSION {
             self.send_error(id, -32600, "Invalid Request: jsonrpc version must be 2.0");
             return;
         }
@@ -104,13 +108,13 @@ impl McpServer {
                 self.send_response(
                     id,
                     json!({
-                        "protocolVersion": "2024-11-05",
+                        "protocolVersion": PROTOCOL_VERSION,
                         "capabilities": {
                             "tools": {}
                         },
                         "serverInfo": {
-                            "name": "chronicle",
-                            "version": "2.0.0"
+                            "name": "intent",
+                            "version": SERVER_VERSION
                         }
                     }),
                 );
@@ -173,7 +177,7 @@ impl McpServer {
                 match name {
                     "search" => {
                         let query = args.get("query").and_then(|q| q.as_str()).unwrap_or("");
-                        let limit = args.get("limit").and_then(|l| l.as_u64()).unwrap_or(3) as usize;
+                        let limit = args.get("limit").and_then(|l| l.as_u64()).map(|l| l as usize).unwrap_or(DEFAULT_SEARCH_LIMIT);
                         tracing::info!("LLM invoked 'search' with query: {}", query);
                         
                         match self.engine.search(query, limit).await {

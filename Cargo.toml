@@ -29,5 +29,5 @@ name = "compiled-intent"
 path = "src/main.rs"
 
 [[bin]]
-name = "chronicle"
+name = "intent"
 path = "src/bin/cli.rs"
