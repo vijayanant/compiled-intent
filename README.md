@@ -1,4 +1,4 @@
-# Compiled Intent (Chronicle Engine)
+# Compiled Intent (Compitent Engine)
 
 **A Universal, Persistent Semantic Memory Layer for AI Agents**
 

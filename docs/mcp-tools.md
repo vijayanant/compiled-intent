@@ -1,6 +1,6 @@
-# Chronicle MCP Tools (API Reference)
+# Compitent MCP Tools (API Reference)
 
-This document defines the strict Model Context Protocol (MCP) tools exposed by the Chronicle Engine to external clients. 
+This document defines the strict Model Context Protocol (MCP) tools exposed by the Compitent Engine to external clients. 
 
 ---
 

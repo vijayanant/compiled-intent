@@ -2,4 +2,9 @@
 **/*.rs.bk
 Cargo.lock
 .env
-.chronicle/
+.intent/
+
+# Python / ArchEval
+.venv
+__pycache__
+.inspect/

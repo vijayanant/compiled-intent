@@ -1,11 +1,11 @@
-# Chronicle Architecture
+# Compitent Architecture
 
 ## System Overview
-Chronicle is an **Episodic Memory Coprocessor** designed for local AI agents. It solves the "Memory Wall" and "Contextual Amnesia" problems by providing a zero-copy vector database that agents can query on-demand, rather than relying on static prompt stuffing.
+Compitent is an **Episodic Memory Coprocessor** designed for local AI agents. It solves the "Memory Wall" and "Contextual Amnesia" problems by providing a zero-copy vector database that agents can query on-demand, rather than relying on static prompt stuffing.
 
-Because Chronicle is strictly a **System Domain** component (a persistent memory layer), its API and architecture must be completely domain-agnostic. It does not assume the outer layer is a blogging assistant or an architectural auditor. Instead, it provides flexible, low-level levers so the outer layers can construct their own business logic.
+Because Compitent is strictly a **System Domain** component (a persistent memory layer), its API and architecture must be completely domain-agnostic. It does not assume the outer layer is a blogging assistant or an architectural auditor. Instead, it provides flexible, low-level levers so the outer layers can construct their own business logic.
 
-Chronicle operates in two primary modes:
+Compitent operates in two primary modes:
 1.  **Offline Indexer:** Scans directories, parses documents into semantic chunks, generates vector embeddings, and stores them in a local LanceDB instance.
 2.  **Online Coprocessor (MCP):** Runs as a persistent `stdio` server using the Model Context Protocol (MCP). It exposes tools to any compatible AI IDE or Agent, allowing them to dynamically search the memory base.
 
@@ -44,11 +44,11 @@ The outer layer needs to know if the memory is stale, and it needs a way to forc
 To maintain a clean separation of concerns, the Rust codebase is divided into four distinct modules:
 
 ### 1. `config` (Configuration & Orchestration)
-Handles loading settings from `chronicle.toml` (or environment variables) and parsing CLI arguments. 
+Handles loading settings from `intent.toml` (or environment variables) and parsing CLI arguments. 
 *   **Responsibilities:** Defines indexing paths, chunking parameters, and embedding model endpoints (e.g., local `llama.cpp` server URLs).
 
 ### 2. `indexer` (Parsing & Vectorization)
-The ingestion engine of Chronicle.
+The ingestion engine of Compitent.
 *   **Responsibilities:** 
     *   Reads files from disk.
     *   Applies language-specific chunking strategies (e.g., Markdown header-based chunking).
@@ -64,7 +64,7 @@ The agnostic brain of the system that bridges storage and search.
     *   *Constraint:* Must not contain any MCP-specific serialization logic.
 
 ### 4. `mcp` (The Transport Layer)
-The communication boundary between Chronicle and the outside world.
+The communication boundary between Compitent and the outside world.
 *   **Responsibilities:**
     *   Speaks the JSON-RPC Model Context Protocol over `stdin`/`stdout`.
     *   Registers the `recall` tool with connecting clients.

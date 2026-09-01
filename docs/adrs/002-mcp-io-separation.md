@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-Chronicle acts as an MCP (Model Context Protocol) server communicating over Standard Input/Output (Stdio). The MCP specification strictly dictates that the communication channel between the AI IDE (the client) and Chronicle (the server) happens over `stdout`. The client expects *only* valid JSON-RPC messages on this channel.
+Compitent acts as an MCP (Model Context Protocol) server communicating over Standard Input/Output (Stdio). The MCP specification strictly dictates that the communication channel between the AI IDE (the client) and Compitent (the server) happens over `stdout`. The client expects *only* valid JSON-RPC messages on this channel.
 
 If a developer accidentally prints a debug message, a loading bar, or a panic trace to `stdout`, the client's JSON parser will instantly crash, breaking the entire proxy connection.
 
