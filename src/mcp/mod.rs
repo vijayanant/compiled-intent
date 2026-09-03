@@ -199,7 +199,7 @@ impl McpServer {
                         let dir = args.get("directory_path").and_then(|q| q.as_str()).unwrap_or("");
                         tracing::info!("LLM invoked 'index_directory' for path: {}", dir);
                         
-                        match crate::indexer::index_adrs(&self.engine, &[dir.to_string()]).await {
+                        match crate::indexer::index_adrs(&self.engine, &[dir]).await {
                             Ok(_) => self.send_response(id, json!({ "content": [{ "type": "text", "text": "Indexing successful!" }] })),
                             Err(e) => self.send_error(id, JSONRPC_INTERNAL_ERROR, &format!("Indexing failed: {}", e))
                         }

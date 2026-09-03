@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match &cli.command {
         Commands::Index { path } => {
             tracing::info!("Indexing directory: {}", path);
-            compiled_intent::indexer::index_adrs(&engine, &[path.to_string()]).await?;
+            compiled_intent::indexer::index_adrs(&engine, &[path]).await?;
             tracing::info!("Indexing complete!");
         }
         Commands::Search { query, mode, limit } => {

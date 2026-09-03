@@ -42,9 +42,9 @@ fn extract_metadata(content: &str) -> (String, String) {
     ("{}".to_string(), content.to_string())
 }
 
-pub async fn index_adrs(
+pub async fn index_adrs<P: AsRef<std::path::Path> + std::fmt::Debug>(
     engine: &CompitentEngine,
-    adr_paths: &[String],
+    adr_paths: &[P],
 ) -> Result<(), CompitentError> {
     tracing::info!("Scanning directories '{:?}' for ADRs...", adr_paths);
 
@@ -59,7 +59,7 @@ pub async fn index_adrs(
 
     let mut md_files = Vec::new();
     for adr_path in adr_paths {
-        for entry in walkdir::WalkDir::new(adr_path)
+        for entry in walkdir::WalkDir::new(adr_path.as_ref())
             .into_iter()
             .filter_map(|e| e.ok())
         {
