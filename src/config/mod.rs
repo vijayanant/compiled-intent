@@ -24,7 +24,9 @@ impl Default for EngineConfig {
 
 impl EngineConfig {
     pub fn load(custom_path: Option<String>) -> Self {
-        let config_path = custom_path.map(PathBuf::from).unwrap_or_else(|| PathBuf::from(".intent/config.toml"));
+        let config_path = custom_path
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(".intent/config.toml"));
         if let Ok(contents) = std::fs::read_to_string(&config_path) {
             if let Ok(config) = toml::from_str(&contents) {
                 return config;
@@ -37,7 +39,6 @@ impl EngineConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
 
     #[test]
     fn test_default_config() {

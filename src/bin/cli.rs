@@ -25,6 +25,9 @@ enum Commands {
     Search {
         /// The query to search for
         query: String,
+        /// Search mode (vector, fts, or hybrid)
+        #[arg(long, default_value = "hybrid")]
+        mode: String,
         /// Maximum number of results to return
         #[arg(long, default_value_t = 3)]
         limit: usize,
@@ -34,7 +37,7 @@ enum Commands {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     compiled_intent::telemetry::init_tracing();
-    
+
     let cli = Cli::parse();
     let config = EngineConfig::load(cli.config);
     let engine = CompitentEngine::new(config);
@@ -45,9 +48,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             compiled_intent::indexer::index_adrs(&engine, &[path.to_string()]).await?;
             tracing::info!("Indexing complete!");
         }
-        Commands::Search { query, limit } => {
-            tracing::info!("Searching for: {}", query);
-            let results = engine.search(query, *limit).await?;
+        Commands::Search { query, mode, limit } => {
+            tracing::info!("Searching for: {} (Mode: {})", query, mode);
+            let results = engine.search(query, *limit, mode).await?;
             println!("{}", serde_json::to_string_pretty(&results)?);
         }
     }

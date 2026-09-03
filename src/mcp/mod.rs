@@ -178,9 +178,10 @@ impl McpServer {
                     "search" => {
                         let query = args.get("query").and_then(|q| q.as_str()).unwrap_or("");
                         let limit = args.get("limit").and_then(|l| l.as_u64()).map(|l| l as usize).unwrap_or(DEFAULT_SEARCH_LIMIT);
-                        tracing::info!("LLM invoked 'search' with query: {}", query);
+                        let mode = args.get("mode").and_then(|m| m.as_str()).unwrap_or("vector");
+                        tracing::info!("LLM invoked 'search' in {} mode with query: {}", mode, query);
                         
-                        match self.engine.search(query, limit).await {
+                        match self.engine.search(query, limit, mode).await {
                             Ok(results) => self.send_response(id, json!({ "content": [{ "type": "text", "text": serde_json::to_string_pretty(&results).unwrap() }] })),
                             Err(e) => self.send_error(id, JSONRPC_INTERNAL_ERROR, &format!("Search failed: {}", e))
                         }

@@ -42,9 +42,7 @@ impl CompitentEngine {
         Err(CompitentError::Network("Malformed embedding response".to_string()))
     }
 
-    pub async fn search(&self, query_text: &str, limit: usize) -> Result<Vec<serde_json::Value>, CompitentError> {
-        let embedding = self.get_embedding(query_text).await?;
-        
+    pub async fn search(&self, query_text: &str, limit: usize, mode: &str) -> Result<Vec<serde_json::Value>, CompitentError> {
         let db = lancedb::connect(&self.config.lancedb_path).execute().await
             .map_err(|e| CompitentError::Database(e.to_string()))?;
             
@@ -52,17 +50,40 @@ impl CompitentEngine {
             .map_err(|e| CompitentError::Database(e.to_string()))?;
 
         use futures::stream::StreamExt;
-        use lancedb::query::{QueryBase, QueryExecutionOptions};
+        use lancedb::query::{QueryBase, QueryExecutionOptions, ExecutableQuery};
         use lance_index::scalar::FullTextSearchQuery;
         
-        let mut stream = table.query()
-            .full_text_search(FullTextSearchQuery::new(query_text.to_string()))
-            .nearest_to(embedding.as_slice())
-            .map_err(|e| CompitentError::Database(e.to_string()))?
-            .limit(limit)
-            .execute_hybrid(QueryExecutionOptions::default())
-            .await
-            .map_err(|e| CompitentError::Database(e.to_string()))?;
+        let mut stream = match mode {
+            "fts" => {
+                table.query()
+                    .full_text_search(FullTextSearchQuery::new(query_text.to_string()))
+                    .limit(limit)
+                    .execute()
+                    .await
+                    .map_err(|e| CompitentError::Database(e.to_string()))?
+            }
+            "hybrid" => {
+                let embedding = self.get_embedding(query_text).await?;
+                table.query()
+                    .full_text_search(FullTextSearchQuery::new(query_text.to_string()))
+                    .nearest_to(embedding.as_slice())
+                    .map_err(|e| CompitentError::Database(e.to_string()))?
+                    .limit(limit)
+                    .execute_hybrid(QueryExecutionOptions::default())
+                    .await
+                    .map_err(|e| CompitentError::Database(e.to_string()))?
+            }
+            _ => { // default to pure vector
+                let embedding = self.get_embedding(query_text).await?;
+                table.query()
+                    .nearest_to(embedding.as_slice())
+                    .map_err(|e| CompitentError::Database(e.to_string()))?
+                    .limit(limit)
+                    .execute()
+                    .await
+                    .map_err(|e| CompitentError::Database(e.to_string()))?
+            }
+        };
 
         let mut chunks = Vec::new();
         

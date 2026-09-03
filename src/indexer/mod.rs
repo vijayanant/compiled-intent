@@ -2,10 +2,10 @@ pub mod markdown_chunker;
 
 use crate::engine::CompitentEngine;
 use crate::error::CompitentError;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use sha2::{Digest, Sha256};
 
 use arrow::array::{
     FixedSizeListArray, Float32Array, RecordBatch, RecordBatchIterator, RecordBatchReader,
@@ -42,7 +42,10 @@ fn extract_metadata(content: &str) -> (String, String) {
     ("{}".to_string(), content.to_string())
 }
 
-pub async fn index_adrs(engine: &CompitentEngine, adr_paths: &[String]) -> Result<(), CompitentError> {
+pub async fn index_adrs(
+    engine: &CompitentEngine,
+    adr_paths: &[String],
+) -> Result<(), CompitentError> {
     tracing::info!("Scanning directories '{:?}' for ADRs...", adr_paths);
 
     // 1. Initialize Differential Sync Manifest
@@ -56,7 +59,10 @@ pub async fn index_adrs(engine: &CompitentEngine, adr_paths: &[String]) -> Resul
 
     let mut md_files = Vec::new();
     for adr_path in adr_paths {
-        for entry in walkdir::WalkDir::new(adr_path).into_iter().filter_map(|e| e.ok()) {
+        for entry in walkdir::WalkDir::new(adr_path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
             let path = entry.path();
             if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
                 md_files.push(path.to_path_buf());
@@ -75,14 +81,14 @@ pub async fn index_adrs(engine: &CompitentEngine, adr_paths: &[String]) -> Resul
         let filename = file_path.display().to_string();
         let raw_content = std::fs::read_to_string(&file_path)
             .map_err(|e| CompitentError::Database(format!("Read error: {}", e)))?;
-            
+
         let current_hash = hash_content(&raw_content);
-        
+
         let needs_update = match manifest.get(&filename) {
             Some(stored_hash) => stored_hash != &current_hash,
             None => true, // New file
         };
-        
+
         if needs_update {
             files_to_process.push((filename, raw_content, current_hash));
         }
@@ -93,7 +99,10 @@ pub async fn index_adrs(engine: &CompitentEngine, adr_paths: &[String]) -> Resul
         return Ok(());
     }
 
-    tracing::info!("Found {} new/updated files to index.", files_to_process.len());
+    tracing::info!(
+        "Found {} new/updated files to index.",
+        files_to_process.len()
+    );
 
     let db = connect(&engine.config.lancedb_path)
         .execute()
@@ -101,7 +110,12 @@ pub async fn index_adrs(engine: &CompitentEngine, adr_paths: &[String]) -> Resul
         .map_err(|e| CompitentError::Database(e.to_string()))?;
 
     // 3. Invalidate Stale Cache in LanceDB
-    let table_exists = db.table_names().execute().await.unwrap_or_default().contains(&crate::DEFAULT_TABLE_NAME.to_string());
+    let table_exists = db
+        .table_names()
+        .execute()
+        .await
+        .unwrap_or_default()
+        .contains(&crate::DEFAULT_TABLE_NAME.to_string());
     if table_exists {
         if let Ok(table) = db.open_table(crate::DEFAULT_TABLE_NAME).execute().await {
             for (filename, _, _) in &files_to_process {
@@ -140,7 +154,10 @@ pub async fn index_adrs(engine: &CompitentEngine, adr_paths: &[String]) -> Resul
 
         for (b_idx, block) in blocks.into_iter().enumerate() {
             let parent_id = format!("{}_b{}", filename, b_idx);
-            let stored_content = format!("Source: {}\nSection: {}\n\n{}", filename, block.header, block.payload);
+            let stored_content = format!(
+                "Source: {}\nSection: {}\n\n{}",
+                filename, block.header, block.payload
+            );
 
             for (c_idx, child_text) in block.children.into_iter().enumerate() {
                 tasks.push(ChunkTask {
@@ -156,10 +173,13 @@ pub async fn index_adrs(engine: &CompitentEngine, adr_paths: &[String]) -> Resul
         }
     }
 
-    tracing::info!("Generating embeddings for {} total chunks concurrently...", tasks.len());
+    tracing::info!(
+        "Generating embeddings for {} total chunks concurrently...",
+        tasks.len()
+    );
     let engine_ref = &engine;
 
-    use futures::stream::{StreamExt, iter};
+    use futures::stream::{iter, StreamExt};
     let results = iter(tasks)
         .map(|task| async move {
             let vec = engine_ref.get_embedding(&task.child_text).await;
@@ -178,7 +198,7 @@ pub async fn index_adrs(engine: &CompitentEngine, adr_paths: &[String]) -> Resul
         context_payloads.push(task.stored_content);
         metadatas.push(task.metadata_json);
         vectors.extend(vector);
-        
+
         manifest.insert(task.filename, task.new_hash);
     }
 
@@ -190,7 +210,14 @@ pub async fn index_adrs(engine: &CompitentEngine, adr_paths: &[String]) -> Resul
         Field::new("vector_text", DataType::Utf8, false),
         Field::new("context_payload", DataType::Utf8, false),
         Field::new("metadata", DataType::Utf8, false),
-        Field::new("vector", DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float32, true)), engine.config.embedding_dimensions), false),
+        Field::new(
+            "vector",
+            DataType::FixedSizeList(
+                Arc::new(Field::new("item", DataType::Float32, true)),
+                engine.config.embedding_dimensions,
+            ),
+            false,
+        ),
     ]));
 
     let chunk_id_array = Arc::new(StringArray::from(chunk_ids));
@@ -199,28 +226,55 @@ pub async fn index_adrs(engine: &CompitentEngine, adr_paths: &[String]) -> Resul
     let vector_text_array = Arc::new(StringArray::from(vector_texts));
     let context_payload_array = Arc::new(StringArray::from(context_payloads));
     let metadata_array = Arc::new(StringArray::from(metadatas));
-    
+
     let vector_values = Float32Array::from(vectors);
     let item_field = Arc::new(Field::new("item", DataType::Float32, true));
-    let vector_array = Arc::new(FixedSizeListArray::try_new(item_field, engine.config.embedding_dimensions, Arc::new(vector_values), None)
-        .map_err(|e| CompitentError::Database(format!("Arrow List error: {}", e)))?);
+    let vector_array = Arc::new(
+        FixedSizeListArray::try_new(
+            item_field,
+            engine.config.embedding_dimensions,
+            Arc::new(vector_values),
+            None,
+        )
+        .map_err(|e| CompitentError::Database(format!("Arrow List error: {}", e)))?,
+    );
 
-    let batch = RecordBatch::try_new(schema.clone(), vec![
-        chunk_id_array as _, parent_id_array as _, filename_array as _, 
-        vector_text_array as _, context_payload_array as _, metadata_array as _, vector_array as _
-    ]).map_err(|e| CompitentError::Database(format!("Arrow Batch error: {}", e)))?;
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![
+            chunk_id_array as _,
+            parent_id_array as _,
+            filename_array as _,
+            vector_text_array as _,
+            context_payload_array as _,
+            metadata_array as _,
+            vector_array as _,
+        ],
+    )
+    .map_err(|e| CompitentError::Database(format!("Arrow Batch error: {}", e)))?;
 
     let batches = RecordBatchIterator::new(vec![Ok(batch)], schema.clone());
     let reader: Box<dyn RecordBatchReader + Send> = Box::new(batches);
 
     let table = if table_exists {
         tracing::info!("Appending deltas to LanceDB...");
-        let table = db.open_table(crate::DEFAULT_TABLE_NAME).execute().await.map_err(|e| CompitentError::Database(e.to_string()))?;
-        table.add(reader).execute().await.map_err(|e| CompitentError::Database(e.to_string()))?;
+        let table = db
+            .open_table(crate::DEFAULT_TABLE_NAME)
+            .execute()
+            .await
+            .map_err(|e| CompitentError::Database(e.to_string()))?;
+        table
+            .add(reader)
+            .execute()
+            .await
+            .map_err(|e| CompitentError::Database(e.to_string()))?;
         table
     } else {
         tracing::info!("Creating new LanceDB table...");
-        db.create_table(crate::DEFAULT_TABLE_NAME, reader).execute().await.map_err(|e| CompitentError::Database(e.to_string()))?
+        db.create_table(crate::DEFAULT_TABLE_NAME, reader)
+            .execute()
+            .await
+            .map_err(|e| CompitentError::Database(e.to_string()))?
     };
 
     std::fs::create_dir_all(&engine.config.intent_dir).unwrap_or_default();
@@ -228,10 +282,11 @@ pub async fn index_adrs(engine: &CompitentEngine, adr_paths: &[String]) -> Resul
     std::fs::write(&manifest_path, manifest_json).unwrap();
     tracing::info!("Indexing complete! Building Full-Text Search (Tantivy) Index...");
 
-    use lancedb::index::Index;
     use lancedb::index::scalar::FtsIndexBuilder;
-    
-    table.create_index(&["context_payload"], Index::FTS(FtsIndexBuilder::default()))
+    use lancedb::index::Index;
+
+    table
+        .create_index(&["context_payload"], Index::FTS(FtsIndexBuilder::default()))
         .execute()
         .await
         .map_err(|e| CompitentError::Database(format!("FTS Index Error: {}", e)))?;
