@@ -119,8 +119,11 @@ pub async fn index_adrs<P: AsRef<std::path::Path> + std::fmt::Debug>(
             for (filename, _, _) in &files_to_process {
                 if manifest.contains_key(filename) {
                     tracing::debug!("Removing stale vectors for {}", filename);
-                    let query = format!("filename = '{}'", filename);
-                    let _ = table.delete(&query).await;
+                    let escaped_filename = filename.replace('\'', "''");
+                    let query = format!("filename = '{}'", escaped_filename);
+                    if let Err(e) = table.delete(&query).await {
+                        tracing::warn!("Failed to remove stale vectors for {}: {}", filename, e);
+                    }
                 }
             }
         }

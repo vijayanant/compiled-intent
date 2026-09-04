@@ -66,7 +66,22 @@ pub fn chunk_markdown(markdown: &str) -> Vec<ParentBlock> {
             Event::End(pulldown_cmark::TagEnd::Heading(..)) => {
                 in_heading = false;
                 current_header = heading_text.trim().to_string();
-                current_content.push_str(&format!("# {}\n", current_header));
+                current_content.push_str(&format!("# {}\n\n", current_header));
+            }
+            Event::End(pulldown_cmark::TagEnd::Paragraph) => {
+                if !in_heading && !current_content.ends_with("\n\n") {
+                    current_content.push_str("\n\n");
+                }
+            }
+            Event::End(pulldown_cmark::TagEnd::Item) => {
+                if !in_heading && !current_content.ends_with('\n') {
+                    current_content.push('\n');
+                }
+            }
+            Event::End(pulldown_cmark::TagEnd::CodeBlock) => {
+                if !in_heading && !current_content.ends_with("\n\n") {
+                    current_content.push_str("\n\n");
+                }
             }
             Event::Text(text) | Event::Code(text) => {
                 if in_heading {
