@@ -79,8 +79,7 @@ pub async fn index_adrs<P: AsRef<std::path::Path> + std::fmt::Debug>(
     let mut files_to_process = Vec::new();
     for file_path in md_files {
         let filename = file_path.display().to_string();
-        let raw_content = std::fs::read_to_string(&file_path)
-            .map_err(|e| CompitentError::Database(format!("Read error: {}", e)))?;
+        let raw_content = std::fs::read_to_string(&file_path)?;
 
         let current_hash = hash_content(&raw_content);
 
@@ -106,8 +105,7 @@ pub async fn index_adrs<P: AsRef<std::path::Path> + std::fmt::Debug>(
 
     let db = connect(&engine.config.lancedb_path)
         .execute()
-        .await
-        .map_err(|e| CompitentError::Database(e.to_string()))?;
+        .await?;
 
     // 3. Invalidate Stale Cache in LanceDB
     let table_exists = db
@@ -229,15 +227,12 @@ pub async fn index_adrs<P: AsRef<std::path::Path> + std::fmt::Debug>(
 
     let vector_values = Float32Array::from(vectors);
     let item_field = Arc::new(Field::new("item", DataType::Float32, true));
-    let vector_array = Arc::new(
-        FixedSizeListArray::try_new(
-            item_field,
-            engine.config.embedding_dimensions,
-            Arc::new(vector_values),
-            None,
-        )
-        .map_err(|e| CompitentError::Database(format!("Arrow List error: {}", e)))?,
-    );
+    let vector_array = Arc::new(FixedSizeListArray::try_new(
+        item_field,
+        engine.config.embedding_dimensions,
+        Arc::new(vector_values),
+        None,
+    )?);
 
     let batch = RecordBatch::try_new(
         schema.clone(),
@@ -250,8 +245,7 @@ pub async fn index_adrs<P: AsRef<std::path::Path> + std::fmt::Debug>(
             metadata_array as _,
             vector_array as _,
         ],
-    )
-    .map_err(|e| CompitentError::Database(format!("Arrow Batch error: {}", e)))?;
+    )?;
 
     let batches = RecordBatchIterator::new(vec![Ok(batch)], schema.clone());
     let reader: Box<dyn RecordBatchReader + Send> = Box::new(batches);
@@ -261,25 +255,22 @@ pub async fn index_adrs<P: AsRef<std::path::Path> + std::fmt::Debug>(
         let table = db
             .open_table(crate::DEFAULT_TABLE_NAME)
             .execute()
-            .await
-            .map_err(|e| CompitentError::Database(e.to_string()))?;
+            .await?;
         table
             .add(reader)
             .execute()
-            .await
-            .map_err(|e| CompitentError::Database(e.to_string()))?;
+            .await?;
         table
     } else {
         tracing::info!("Creating new LanceDB table...");
         db.create_table(crate::DEFAULT_TABLE_NAME, reader)
             .execute()
-            .await
-            .map_err(|e| CompitentError::Database(e.to_string()))?
+            .await?
     };
 
-    std::fs::create_dir_all(&engine.config.intent_dir).unwrap_or_default();
-    let manifest_json = serde_json::to_string_pretty(&manifest).unwrap();
-    std::fs::write(&manifest_path, manifest_json).unwrap();
+    std::fs::create_dir_all(&engine.config.intent_dir)?;
+    let manifest_json = serde_json::to_string_pretty(&manifest)?;
+    std::fs::write(&manifest_path, manifest_json)?;
     tracing::info!("Indexing complete! Building Full-Text Search (Tantivy) Index...");
 
     use lancedb::index::scalar::FtsIndexBuilder;
@@ -288,8 +279,7 @@ pub async fn index_adrs<P: AsRef<std::path::Path> + std::fmt::Debug>(
     table
         .create_index(&["context_payload"], Index::FTS(FtsIndexBuilder::default()))
         .execute()
-        .await
-        .map_err(|e| CompitentError::Database(format!("FTS Index Error: {}", e)))?;
+        .await?;
 
     tracing::info!("Tantivy FTS Index built successfully!");
 

@@ -1,5 +1,6 @@
 use crate::config::EngineConfig;
 use crate::error::CompitentError;
+use arrow::array::Array;
 use serde_json::json;
 
 pub struct CompitentEngine {
@@ -25,29 +26,25 @@ impl CompitentEngine {
         let res = self.client.post(&self.config.llama_endpoint)
             .json(&payload)
             .send()
-            .await
-            .map_err(|e| CompitentError::Network(e.to_string()))?;
+            .await?;
 
         if !res.status().is_success() {
             return Err(CompitentError::Network(format!("API returned {}", res.status())));
         }
 
-        let data: serde_json::Value = res.json().await.map_err(|e| CompitentError::Network(e.to_string()))?;
+        let data: serde_json::Value = res.json().await?;
         
         if let Some(embedding) = data["data"][0]["embedding"].as_array() {
             let floats: Vec<f32> = embedding.iter().filter_map(|v| v.as_f64().map(|f| f as f32)).collect();
             return Ok(floats);
         }
 
-        Err(CompitentError::Network("Malformed embedding response".to_string()))
+        Err(CompitentError::Internal("Malformed embedding response".to_string()))
     }
 
     pub async fn search(&self, query_text: &str, limit: usize, mode: &str) -> Result<Vec<serde_json::Value>, CompitentError> {
-        let db = lancedb::connect(&self.config.lancedb_path).execute().await
-            .map_err(|e| CompitentError::Database(e.to_string()))?;
-            
-        let table = db.open_table(crate::DEFAULT_TABLE_NAME).execute().await
-            .map_err(|e| CompitentError::Database(e.to_string()))?;
+        let db = lancedb::connect(&self.config.lancedb_path).execute().await?;
+        let table = db.open_table(crate::DEFAULT_TABLE_NAME).execute().await?;
 
         use futures::stream::StreamExt;
         use lancedb::query::{QueryBase, QueryExecutionOptions, ExecutableQuery};
@@ -59,36 +56,31 @@ impl CompitentEngine {
                     .full_text_search(FullTextSearchQuery::new(query_text.to_string()))
                     .limit(limit)
                     .execute()
-                    .await
-                    .map_err(|e| CompitentError::Database(e.to_string()))?
+                    .await?
             }
             "hybrid" => {
                 let embedding = self.get_embedding(query_text).await?;
                 table.query()
                     .full_text_search(FullTextSearchQuery::new(query_text.to_string()))
-                    .nearest_to(embedding.as_slice())
-                    .map_err(|e| CompitentError::Database(e.to_string()))?
+                    .nearest_to(embedding.as_slice())?
                     .limit(limit)
                     .execute_hybrid(QueryExecutionOptions::default())
-                    .await
-                    .map_err(|e| CompitentError::Database(e.to_string()))?
+                    .await?
             }
             _ => { // default to pure vector
                 let embedding = self.get_embedding(query_text).await?;
                 table.query()
-                    .nearest_to(embedding.as_slice())
-                    .map_err(|e| CompitentError::Database(e.to_string()))?
+                    .nearest_to(embedding.as_slice())?
                     .limit(limit)
                     .execute()
-                    .await
-                    .map_err(|e| CompitentError::Database(e.to_string()))?
+                    .await?
             }
         };
 
         let mut chunks = Vec::new();
         
         while let Some(batch_result) = stream.next().await {
-            let batch = batch_result.map_err(|e| CompitentError::Database(e.to_string()))?;
+            let batch = batch_result?;
             
             let context_col = batch.column_by_name("context_payload")
                 .and_then(|c| c.as_any().downcast_ref::<arrow::array::StringArray>());
@@ -106,7 +98,9 @@ impl CompitentEngine {
                     });
                     
                     if let Some(distances) = distance_col {
-                        result_json["distance"] = json!(distances.value(i));
+                        if !distances.is_null(i) {
+                            result_json["distance"] = json!(distances.value(i));
+                        }
                     }
                     
                     chunks.push(result_json);
@@ -121,8 +115,7 @@ impl CompitentEngine {
         // Extract the filename from the chunk_id (e.g., "posts/index.md_b0_c0" -> "posts/index.md")
         let filename = chunk_id.rsplit_once("_b").map(|(prefix, _)| prefix).unwrap_or(chunk_id);
         
-        std::fs::read_to_string(filename)
-            .map_err(|e| CompitentError::Database(format!("Failed to expand context. Could not read source file {}: {}", filename, e)))
+        Ok(std::fs::read_to_string(filename)?)
     }
 
     
