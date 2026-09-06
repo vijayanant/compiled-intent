@@ -78,34 +78,9 @@ impl CompitentEngine {
         };
 
         let mut chunks = Vec::new();
-        
         while let Some(batch_result) = stream.next().await {
             let batch = batch_result?;
-            
-            let context_col = batch.column_by_name("context_payload")
-                .and_then(|c| c.as_any().downcast_ref::<arrow::array::StringArray>());
-            let chunk_id_col = batch.column_by_name("chunk_id")
-                .and_then(|c| c.as_any().downcast_ref::<arrow::array::StringArray>());
-            let distance_col = batch.column_by_name("_score")
-                .or_else(|| batch.column_by_name("_distance"))
-                .and_then(|c| c.as_any().downcast_ref::<arrow::array::Float32Array>());
-                
-            if let (Some(contexts), Some(chunk_ids)) = (context_col, chunk_id_col) {
-                for i in 0..batch.num_rows() {
-                    let mut result_json = json!({
-                        "chunk_id": chunk_ids.value(i),
-                        "context": contexts.value(i),
-                    });
-                    
-                    if let Some(distances) = distance_col {
-                        if !distances.is_null(i) {
-                            result_json["distance"] = json!(distances.value(i));
-                        }
-                    }
-                    
-                    chunks.push(result_json);
-                }
-            }
+            chunks.extend(extract_batch_results(&batch));
         }
 
         Ok(chunks)
@@ -122,4 +97,36 @@ impl CompitentEngine {
     pub async fn recall_memory(&self, _stimulus: &str) -> Result<String, CompitentError> {
         Ok("Mock recall response".to_string())
     }
+}
+
+fn extract_batch_results(batch: &arrow::array::RecordBatch) -> Vec<serde_json::Value> {
+    let context_col = batch
+        .column_by_name("context_payload")
+        .and_then(|c| c.as_any().downcast_ref::<arrow::array::StringArray>());
+    let chunk_id_col = batch
+        .column_by_name("chunk_id")
+        .and_then(|c| c.as_any().downcast_ref::<arrow::array::StringArray>());
+    let distance_col = batch
+        .column_by_name("_score")
+        .or_else(|| batch.column_by_name("_distance"))
+        .and_then(|c| c.as_any().downcast_ref::<arrow::array::Float32Array>());
+
+    let mut chunks = Vec::new();
+    if let (Some(contexts), Some(chunk_ids)) = (context_col, chunk_id_col) {
+        for i in 0..batch.num_rows() {
+            let mut result_json = json!({
+                "chunk_id": chunk_ids.value(i),
+                "context": contexts.value(i),
+            });
+
+            if let Some(distances) = distance_col {
+                if !distances.is_null(i) {
+                    result_json["distance"] = json!(distances.value(i));
+                }
+            }
+
+            chunks.push(result_json);
+        }
+    }
+    chunks
 }

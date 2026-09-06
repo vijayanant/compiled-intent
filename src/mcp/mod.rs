@@ -1,3 +1,5 @@
+pub mod tools;
+
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::io::{self, BufRead, Write};
@@ -28,12 +30,10 @@ struct RpcResponse {
 /// The MCP Server router.
 /// Handles the JSON-RPC protocol over Stdio.
 const JSONRPC_METHOD_NOT_FOUND: i32 = -32601;
-const JSONRPC_INTERNAL_ERROR: i32 = -32603;
 
 const JSONRPC_VERSION: &str = "2.0";
 const PROTOCOL_VERSION: &str = "2024-11-05";
 const SERVER_VERSION: &str = "2.0.0";
-const DEFAULT_SEARCH_LIMIT: usize = 3;
 
 pub struct McpServer {
     engine: CompitentEngine,
@@ -123,90 +123,16 @@ impl McpServer {
                 tracing::info!("Client initialized.");
             }
             "tools/list" => {
-                // Expose our Universal Semantic Filesystem capabilities
-                self.send_response(id, json!({
-                    "tools": [
-                        {
-                            "name": "search",
-                            "description": "Performs a semantic or hybrid search against indexed documents. Returns a JSON array of objects with keys: 'chunk_id' (string), 'context' (string), and 'distance' (float). Note: because this uses LanceDB Hybrid Search, the distance metric is derived from Reciprocal Rank Fusion, meaning higher distance scores actually indicate WORSE relevance (a distance of 0.0 is a perfect match).",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {
-                                    "query": { "type": "string" },
-                                    "namespace": { "type": "string", "description": "Target LanceDB collection" },
-                                    "mode": { "type": "string", "enum": ["vector", "fts", "hybrid"] },
-                                    "metadata_filter": { "type": "string", "description": "SQL filter for JSON metadata" },
-                                    "limit": { "type": "integer" }
-                                },
-                                "required": ["query"]
-                            }
-                        },
-                        {
-                            "name": "get_context",
-                            "description": "Resolves a child chunk ID back to its full parent structural context. Returns a single raw string containing the full markdown file content. Use this when a search result looks promising but you need to read the surrounding text before making a decision.",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {
-                                    "chunk_id": { "type": "string" },
-                                    "expand_level": { "type": "string", "enum": ["parent", "siblings", "document"] }
-                                },
-                                "required": ["chunk_id"]
-                            }
-                        },
-                        {
-                            "name": "index_directory",
-                            "description": "Scans a directory for markdown files and updates the semantic LanceDB index.",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {
-                                    "directory_path": { "type": "string" },
-                                    "namespace": { "type": "string" },
-                                    "chunking_strategy": { "type": "string", "enum": ["ast", "sliding_window"] }
-                                },
-                                "required": ["directory_path", "namespace"]
-                            }
-                        }
-                    ]
-                }));
+                self.send_response(id, tools::tool_definitions());
             }
             "tools/call" => {
                 let params = req.params.unwrap_or_default();
                 let name = params.get("name").and_then(|n| n.as_str()).unwrap_or("");
                 let args = params.get("arguments").cloned().unwrap_or(json!({}));
 
-                match name {
-                    "search" => {
-                        let query = args.get("query").and_then(|q| q.as_str()).unwrap_or("");
-                        let limit = args.get("limit").and_then(|l| l.as_u64()).map(|l| l as usize).unwrap_or(DEFAULT_SEARCH_LIMIT);
-                        let mode = args.get("mode").and_then(|m| m.as_str()).unwrap_or("vector");
-                        tracing::info!("LLM invoked 'search' in {} mode with query: {}", mode, query);
-                        
-                        match self.engine.search(query, limit, mode).await {
-                            Ok(results) => self.send_response(id, json!({ "content": [{ "type": "text", "text": serde_json::to_string_pretty(&results).unwrap() }] })),
-                            Err(e) => self.send_error(id, JSONRPC_INTERNAL_ERROR, &format!("Search failed: {}", e))
-                        }
-                    }
-                    "get_context" => {
-                        let chunk_id = args.get("chunk_id").and_then(|q| q.as_str()).unwrap_or("");
-                        tracing::info!("LLM invoked 'get_context' for chunk: {}", chunk_id);
-                        
-                        match self.engine.get_context(chunk_id).await {
-                            Ok(text) => self.send_response(id, json!({ "content": [{ "type": "text", "text": text }] })),
-                            Err(e) => self.send_error(id, JSONRPC_INTERNAL_ERROR, &format!("Context expansion failed: {}", e))
-                        }
-                    }
-                    "index_directory" => {
-                        let dir = args.get("directory_path").and_then(|q| q.as_str()).unwrap_or("");
-                        tracing::info!("LLM invoked 'index_directory' for path: {}", dir);
-                        
-                        match crate::indexer::index_adrs(&self.engine, &[dir]).await {
-                            Ok(_) => self.send_response(id, json!({ "content": [{ "type": "text", "text": "Indexing successful!" }] })),
-                            Err(e) => self.send_error(id, JSONRPC_INTERNAL_ERROR, &format!("Indexing failed: {}", e))
-                        }
-                    }
-                    _ => {
-                        self.send_error(id, JSONRPC_METHOD_NOT_FOUND, "Tool not found");
-                    }
+                match tools::dispatch_tool_call(&self.engine, name, &args).await {
+                    Ok(res) => self.send_response(id, res),
+                    Err((code, msg)) => self.send_error(id, code, &msg),
                 }
             }
             _ => {
