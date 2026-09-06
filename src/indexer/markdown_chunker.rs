@@ -36,6 +36,20 @@ fn generate_sliding_windows(text: &str, window_size: usize, overlap: usize) -> V
     windows
 }
 
+fn flush_block(header: &str, content: &mut String, blocks: &mut Vec<ParentBlock>) {
+    let trimmed = content.trim();
+    if !trimmed.is_empty() {
+        let payload = trimmed.to_string();
+        let children = generate_sliding_windows(&payload, 300, 50);
+        blocks.push(ParentBlock {
+            header: header.to_string(),
+            payload,
+            children,
+        });
+        content.clear();
+    }
+}
+
 /// Parses Markdown into structural Parent Blocks with dense overlapping child vectors
 pub fn chunk_markdown(markdown: &str) -> Vec<ParentBlock> {
     let parser = Parser::new(markdown);
@@ -51,17 +65,7 @@ pub fn chunk_markdown(markdown: &str) -> Vec<ParentBlock> {
             Event::Start(Tag::Heading { .. }) => {
                 in_heading = true;
                 heading_text.clear();
-
-                if !current_content.trim().is_empty() {
-                    let payload = current_content.trim().to_string();
-                    let children = generate_sliding_windows(&payload, 300, 50);
-                    blocks.push(ParentBlock {
-                        header: current_header.clone(),
-                        payload,
-                        children,
-                    });
-                    current_content.clear();
-                }
+                flush_block(&current_header, &mut current_content, &mut blocks);
             }
             Event::End(pulldown_cmark::TagEnd::Heading(..)) => {
                 in_heading = false;
@@ -97,15 +101,7 @@ pub fn chunk_markdown(markdown: &str) -> Vec<ParentBlock> {
         }
     }
 
-    if !current_content.trim().is_empty() {
-        let payload = current_content.trim().to_string();
-        let children = generate_sliding_windows(&payload, 300, 50);
-        blocks.push(ParentBlock {
-            header: current_header,
-            payload,
-            children,
-        });
-    }
+    flush_block(&current_header, &mut current_content, &mut blocks);
 
     blocks
 }
