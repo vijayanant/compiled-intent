@@ -60,10 +60,7 @@ impl Manifest {
             let content = std::fs::read_to_string(file_path)?;
             let current_hash = Self::hash_content(&content);
 
-            let needs_update = match self.entries.get(&filename) {
-                Some(stored_hash) => stored_hash != &current_hash,
-                None => true,
-            };
+            let needs_update = self.entries.get(&filename) != Some(&current_hash);
 
             if needs_update {
                 deltas.push(DeltaFile {

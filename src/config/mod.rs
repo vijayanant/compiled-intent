@@ -24,13 +24,23 @@ impl Default for EngineConfig {
 
 impl EngineConfig {
     pub fn load(custom_path: Option<String>) -> Self {
+        let is_custom = custom_path.is_some();
         let config_path = custom_path
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(".intent/config.toml"));
-        if let Ok(contents) = std::fs::read_to_string(&config_path) {
-            if let Ok(config) = toml::from_str(&contents) {
-                return config;
+
+        match std::fs::read_to_string(&config_path) {
+            Ok(contents) => match toml::from_str(&contents) {
+                Ok(config) => return config,
+                Err(e) if is_custom => {
+                    tracing::warn!("Failed to parse custom config '{}': {}", config_path.display(), e);
+                }
+                _ => {}
+            },
+            Err(e) if is_custom => {
+                tracing::warn!("Failed to read custom config '{}': {}", config_path.display(), e);
             }
+            _ => {}
         }
         Self::default()
     }

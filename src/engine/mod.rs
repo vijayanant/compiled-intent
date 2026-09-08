@@ -36,6 +36,14 @@ impl CompitentEngine {
         
         if let Some(embedding) = data["data"][0]["embedding"].as_array() {
             let floats: Vec<f32> = embedding.iter().filter_map(|v| v.as_f64().map(|f| f as f32)).collect();
+            let expected_dims = self.config.embedding_dimensions as usize;
+            if floats.len() != expected_dims {
+                return Err(CompitentError::Internal(format!(
+                    "Embedding dimension mismatch: expected {}, got {}",
+                    expected_dims,
+                    floats.len()
+                )));
+            }
             return Ok(floats);
         }
 
