@@ -90,7 +90,7 @@ impl CompitentEngine {
         // Extract the filename from the chunk_id (e.g., "posts/index.md_b0_c0" -> "posts/index.md")
         let filename = chunk_id.rsplit_once("_b").map(|(prefix, _)| prefix).unwrap_or(chunk_id);
         
-        Ok(std::fs::read_to_string(filename)?)
+        Ok(tokio::fs::read_to_string(filename).await?)
     }
 }
 
