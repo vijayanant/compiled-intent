@@ -12,11 +12,11 @@ fn generate_sliding_windows(text: &str, window_size: usize, overlap: usize) -> V
         return vec![];
     }
     
-    if text.len() <= window_size {
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() <= window_size {
         return vec![text.to_string()];
     }
 
-    let chars: Vec<char> = text.chars().collect();
     let mut windows = Vec::new();
     let mut start = 0;
 

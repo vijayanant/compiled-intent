@@ -27,10 +27,6 @@ struct RpcResponse {
     error: Option<Value>,
 }
 
-/// The MCP Server router.
-/// Handles the JSON-RPC protocol over Stdio.
-const JSONRPC_METHOD_NOT_FOUND: i32 = -32601;
-
 const JSONRPC_VERSION: &str = "2.0";
 const PROTOCOL_VERSION: &str = "2024-11-05";
 const SERVER_VERSION: &str = "2.0.0";
@@ -137,7 +133,7 @@ impl McpServer {
             }
             _ => {
                 tracing::warn!("Unhandled method: {}", req.method);
-                self.send_error(id, JSONRPC_METHOD_NOT_FOUND, "Method not supported");
+                self.send_error(id, tools::JSONRPC_METHOD_NOT_FOUND, "Method not supported");
             }
         }
     }

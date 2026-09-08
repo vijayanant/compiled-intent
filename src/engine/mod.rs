@@ -92,11 +92,6 @@ impl CompitentEngine {
         
         Ok(std::fs::read_to_string(filename)?)
     }
-
-    
-    pub async fn recall_memory(&self, _stimulus: &str) -> Result<String, CompitentError> {
-        Ok("Mock recall response".to_string())
-    }
 }
 
 fn extract_batch_results(batch: &arrow::array::RecordBatch) -> Vec<serde_json::Value> {

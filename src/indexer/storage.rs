@@ -9,7 +9,29 @@ use crate::error::CompitentError;
 pub struct LanceStorage;
 
 impl LanceStorage {
-    pub async fn invalidate_stale_vectors(
+    pub async fn invalidate_stale_files(
+        db: &Connection,
+        table_name: &str,
+        filenames: &[&str],
+    ) {
+        if filenames.is_empty() {
+            return;
+        }
+        let table_exists = db
+            .table_names()
+            .execute()
+            .await
+            .unwrap_or_default()
+            .contains(&table_name.to_string());
+
+        if table_exists {
+            if let Ok(table) = db.open_table(table_name).execute().await {
+                Self::invalidate_stale_vectors(&table, filenames).await;
+            }
+        }
+    }
+
+    async fn invalidate_stale_vectors(
         table: &Table,
         filenames: &[&str],
     ) {

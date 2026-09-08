@@ -133,22 +133,12 @@ pub async fn index_adrs<P: AsRef<Path> + std::fmt::Debug>(
 
     let db = connect(&engine.config.lancedb_path).execute().await?;
 
-    let table_exists = db
-        .table_names()
-        .execute()
-        .await
-        .unwrap_or_default()
-        .contains(&crate::DEFAULT_TABLE_NAME.to_string());
-    if table_exists {
-        if let Ok(table) = db.open_table(crate::DEFAULT_TABLE_NAME).execute().await {
-            let filenames_to_clean: Vec<&str> = deltas
-                .iter()
-                .filter(|d| manifest.contains_file(&d.filename))
-                .map(|d| d.filename.as_str())
-                .collect();
-            LanceStorage::invalidate_stale_vectors(&table, &filenames_to_clean).await;
-        }
-    }
+    let filenames_to_clean: Vec<&str> = deltas
+        .iter()
+        .filter(|d| manifest.contains_file(&d.filename))
+        .map(|d| d.filename.as_str())
+        .collect();
+    LanceStorage::invalidate_stale_files(&db, crate::DEFAULT_TABLE_NAME, &filenames_to_clean).await;
 
     let tasks = prepare_chunk_tasks(&deltas);
     let (index_chunks, updated_hashes) = generate_index_chunks(engine, tasks).await?;
