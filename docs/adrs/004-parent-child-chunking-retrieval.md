@@ -1,7 +1,7 @@
-# ADR 003: Parent-Child Chunking (Small-to-Big Retrieval)
+# ADR 004: Parent-Child Chunking (Small-to-Big Retrieval)
 
 ## Status
-Accepted (Supersedes aspects of ADR 002)
+Accepted (Refines ADR 003)
 
 ## Context
 ADR 002 established that we must chunk by Markdown AST Headers to preserve semantic context and avoid the "blind cuts" of sliding window chunkers. 
