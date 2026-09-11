@@ -1,19 +1,15 @@
+use crate::error::CompitentError;
 use arrow::array::RecordBatch;
 use arrow::record_batch::{RecordBatchIterator, RecordBatchReader};
 use lancedb::connection::Connection;
 use lancedb::index::scalar::FtsIndexBuilder;
 use lancedb::index::Index;
 use lancedb::table::Table;
-use crate::error::CompitentError;
 
 pub struct LanceStorage;
 
 impl LanceStorage {
-    pub async fn invalidate_stale_files(
-        db: &Connection,
-        table_name: &str,
-        filenames: &[&str],
-    ) {
+    pub async fn invalidate_stale_files(db: &Connection, table_name: &str, filenames: &[&str]) {
         if filenames.is_empty() {
             return;
         }
@@ -31,10 +27,7 @@ impl LanceStorage {
         }
     }
 
-    async fn invalidate_stale_vectors(
-        table: &Table,
-        filenames: &[&str],
-    ) {
+    async fn invalidate_stale_vectors(table: &Table, filenames: &[&str]) {
         for filename in filenames {
             tracing::debug!("Removing stale vectors for {}", filename);
             let escaped_filename = filename.replace('\'', "''");
@@ -75,7 +68,10 @@ impl LanceStorage {
     }
 
     pub async fn build_fts_index(table: &Table, column: &str) -> Result<(), CompitentError> {
-        tracing::info!("Building Full-Text Search (Tantivy) Index on '{}'...", column);
+        tracing::info!(
+            "Building Full-Text Search (Tantivy) Index on '{}'...",
+            column
+        );
         table
             .create_index(&[column], Index::FTS(FtsIndexBuilder::default()))
             .execute()
@@ -92,10 +88,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_sql_quote_escaping_in_invalidation() {
-        let temp_dir = std::env::temp_dir().join(format!("intent_storage_test_{}", std::process::id()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("intent_storage_test_{}", std::process::id()));
         std::fs::create_dir_all(&temp_dir).unwrap();
 
-        let db = lancedb::connect(&temp_dir.display().to_string()).execute().await.unwrap();
+        let db = lancedb::connect(&temp_dir.display().to_string())
+            .execute()
+            .await
+            .unwrap();
 
         let quote_file = "docs/user's_spec.md";
         let chunk = IndexChunk {
@@ -109,14 +109,20 @@ mod tests {
         };
 
         let batch = ArrowBatchBuilder::build(vec![chunk], 4).unwrap();
-        let table = LanceStorage::write_batch(&db, "test_quotes", batch).await.unwrap();
+        let table = LanceStorage::write_batch(&db, "test_quotes", batch)
+            .await
+            .unwrap();
         assert_eq!(table.count_rows(None).await.unwrap(), 1);
 
         // Invalidate file with single quote in filename
         LanceStorage::invalidate_stale_files(&db, "test_quotes", &[quote_file]).await;
 
         let table_after = db.open_table("test_quotes").execute().await.unwrap();
-        assert_eq!(table_after.count_rows(None).await.unwrap(), 0, "Quoted filename must be cleanly deleted");
+        assert_eq!(
+            table_after.count_rows(None).await.unwrap(),
+            0,
+            "Quoted filename must be cleanly deleted"
+        );
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

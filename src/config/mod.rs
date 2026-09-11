@@ -33,12 +33,20 @@ impl EngineConfig {
             Ok(contents) => match toml::from_str(&contents) {
                 Ok(config) => return config,
                 Err(e) if is_custom => {
-                    tracing::warn!("Failed to parse custom config '{}': {}", config_path.display(), e);
+                    tracing::warn!(
+                        "Failed to parse custom config '{}': {}",
+                        config_path.display(),
+                        e
+                    );
                 }
                 _ => {}
             },
             Err(e) if is_custom => {
-                tracing::warn!("Failed to read custom config '{}': {}", config_path.display(), e);
+                tracing::warn!(
+                    "Failed to read custom config '{}': {}",
+                    config_path.display(),
+                    e
+                );
             }
             _ => {}
         }

@@ -11,7 +11,7 @@ fn generate_sliding_windows(text: &str, window_size: usize, overlap: usize) -> V
     if text.trim().is_empty() {
         return vec![];
     }
-    
+
     let chars: Vec<char> = text.chars().collect();
     if chars.len() <= window_size {
         return vec![text.to_string()];
@@ -28,8 +28,12 @@ fn generate_sliding_windows(text: &str, window_size: usize, overlap: usize) -> V
         if end == chars.len() {
             break;
         }
-        
-        let step = if window_size > overlap { window_size - overlap } else { 1 };
+
+        let step = if window_size > overlap {
+            window_size - overlap
+        } else {
+            1
+        };
         start += step;
     }
 
@@ -179,7 +183,9 @@ def hello():
         let md = "# Title\n\nFirst paragraph.\n\nSecond paragraph.";
         let blocks = chunk_markdown(md);
         assert_eq!(blocks.len(), 1);
-        assert!(blocks[0].payload.contains("First paragraph.\n\nSecond paragraph."));
+        assert!(blocks[0]
+            .payload
+            .contains("First paragraph.\n\nSecond paragraph."));
     }
 
     #[test]

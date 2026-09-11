@@ -1,7 +1,7 @@
-use std::fs;
-use std::path::PathBuf;
 use compiled_intent::config::EngineConfig;
 use compiled_intent::engine::CompitentEngine;
+use std::fs;
+use std::path::PathBuf;
 
 /// Helper to create an isolated temporary directory cleaned up on Drop.
 pub struct TempTestDir {
@@ -11,8 +11,12 @@ pub struct TempTestDir {
 impl TempTestDir {
     pub fn new(prefix: &str) -> Self {
         use std::time::{SystemTime, UNIX_EPOCH};
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let path = std::env::temp_dir().join(format!("{}_{}_{}", prefix, std::process::id(), nanos));
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path =
+            std::env::temp_dir().join(format!("{}_{}_{}", prefix, std::process::id(), nanos));
         fs::create_dir_all(&path).expect("Failed to create temp test dir");
         Self { path }
     }

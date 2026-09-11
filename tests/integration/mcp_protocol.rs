@@ -30,12 +30,15 @@ async fn test_mcp_initialize_handshake() {
                 "version": "1.0.0"
             }
         }
-    }).to_string();
+    })
+    .to_string();
 
-    let resp_str = server.process_message(&req).await
+    let resp_str = server
+        .process_message(&req)
+        .await
         .expect("Server must reply to initialize handshake");
-    let resp: Value = serde_json::from_str(&resp_str)
-        .expect("Initialize response must be strictly valid JSON");
+    let resp: Value =
+        serde_json::from_str(&resp_str).expect("Initialize response must be strictly valid JSON");
 
     assert_eq!(resp["jsonrpc"], "2.0");
     assert_eq!(resp["id"], "init-1");
@@ -54,13 +57,16 @@ async fn test_mcp_tools_list_schema() {
         "jsonrpc": "2.0",
         "id": 100,
         "method": "tools/list"
-    }).to_string();
+    })
+    .to_string();
 
     let resp_str = server.process_message(&req).await.unwrap();
     let resp: Value = serde_json::from_str(&resp_str).unwrap();
 
     assert_eq!(resp["id"], 100);
-    let tools = resp["result"]["tools"].as_array().expect("Tools must be a list");
+    let tools = resp["result"]["tools"]
+        .as_array()
+        .expect("Tools must be a list");
     assert_eq!(tools.len(), 3);
 
     let tool_names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
@@ -75,7 +81,7 @@ async fn test_mcp_get_context_tool_call() {
     let temp_dir = TempTestDir::new("mcp_ctx");
     let spec_path = temp_dir.write_file(
         "auth_spec.md",
-        "# Security Boundary\n\nAll JWTs must use Ed25519 signatures."
+        "# Security Boundary\n\nAll JWTs must use Ed25519 signatures.",
     );
 
     let engine = create_test_engine(&temp_dir);
@@ -92,7 +98,8 @@ async fn test_mcp_get_context_tool_call() {
                 "expand_level": "parent"
             }
         }
-    }).to_string();
+    })
+    .to_string();
 
     let resp_str = server.process_message(&req).await.unwrap();
     let resp: Value = serde_json::from_str(&resp_str).unwrap();
@@ -111,7 +118,8 @@ async fn test_mcp_error_conformance() {
 
     // 1. Parse Error (-32700)
     let bad_json = "NOT_VALID_JSON";
-    let resp1: Value = serde_json::from_str(&server.process_message(bad_json).await.unwrap()).unwrap();
+    let resp1: Value =
+        serde_json::from_str(&server.process_message(bad_json).await.unwrap()).unwrap();
     assert_eq!(resp1["error"]["code"], -32700);
 
     // 2. Invalid Request (-32600)
@@ -119,8 +127,10 @@ async fn test_mcp_error_conformance() {
         "jsonrpc": "1.0", // invalid version
         "id": 1,
         "method": "tools/list"
-    }).to_string();
-    let resp2: Value = serde_json::from_str(&server.process_message(&bad_req).await.unwrap()).unwrap();
+    })
+    .to_string();
+    let resp2: Value =
+        serde_json::from_str(&server.process_message(&bad_req).await.unwrap()).unwrap();
     assert_eq!(resp2["error"]["code"], -32600);
 
     // 3. Method Not Found (-32601)
@@ -128,8 +138,10 @@ async fn test_mcp_error_conformance() {
         "jsonrpc": "2.0",
         "id": 2,
         "method": "non_existent_rpc_call"
-    }).to_string();
-    let resp3: Value = serde_json::from_str(&server.process_message(&missing_method).await.unwrap()).unwrap();
+    })
+    .to_string();
+    let resp3: Value =
+        serde_json::from_str(&server.process_message(&missing_method).await.unwrap()).unwrap();
     assert_eq!(resp3["error"]["code"], -32601);
 }
 
@@ -143,8 +155,12 @@ async fn test_mcp_notification_emits_no_response() {
     let notif_req = json!({
         "jsonrpc": "2.0",
         "method": "notifications/initialized"
-    }).to_string();
+    })
+    .to_string();
 
     let resp = server.process_message(&notif_req).await;
-    assert!(resp.is_none(), "JSON-RPC notifications must never receive a response");
+    assert!(
+        resp.is_none(),
+        "JSON-RPC notifications must never receive a response"
+    );
 }

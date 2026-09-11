@@ -1,0 +1,24 @@
+# Cognitive Complexity Limit (Clippy default is 25)
+cognitive-complexity-threshold = 20
+
+# Maximum lines allowed per function
+too-many-lines-threshold = 50
+
+# Maximum function arguments
+too-many-arguments-threshold = 7
+
+# Do not use generic placeholder names in production code
+disallowed-names = ["foo", "bar", "baz", "quux", "temp"]
+
+# Project-specific words allowed in documentation without backticks
+doc-valid-idents = [
+    "LanceDB",
+    "Tantivy",
+    "JSON-RPC",
+    "ADR",
+    "AST",
+    "FTS",
+    "RRF",
+    "Ollama",
+    "SHA256"
+]

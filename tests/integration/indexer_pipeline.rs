@@ -1,7 +1,7 @@
 //! Indexer Pipeline Integration Suite
 //!
 //! Verifies the end-to-end ingestion and sync lifecycle:
-//! Markdown AST chunking -> Arrow RecordBatch -> LanceDB storage -> FTS Index -> Delta Sync -> Orphan Purge.
+//! Markdown AST chunking -> Arrow `RecordBatch` -> LanceDB storage -> FTS Index -> Delta Sync -> Orphan Purge.
 //!
 //! Design Intent References:
 //! - ADR-003: Markdown-Aware Chunking Strategy
@@ -33,7 +33,11 @@ Short sub-section content.
 "#;
 
     let blocks = chunk_markdown(markdown);
-    assert_eq!(blocks.len(), 2, "Code blocks with # must not create false AST sections");
+    assert_eq!(
+        blocks.len(),
+        2,
+        "Code blocks with # must not create false AST sections"
+    );
 
     // Parent Block 1
     assert_eq!(blocks[0].header, "Heading One");
@@ -43,7 +47,10 @@ Short sub-section content.
     // All children of Parent 1 must be contained within Parent 1's payload
     for child in &blocks[0].children {
         assert!(blocks[0].payload.contains(child));
-        assert!(!child.contains("Subheading Two"), "Child chunk must not bleed into next section");
+        assert!(
+            !child.contains("Subheading Two"),
+            "Child chunk must not bleed into next section"
+        );
     }
 
     // Parent Block 2
@@ -83,7 +90,15 @@ async fn test_arrow_batch_schema_conformance() {
     let col_names: Vec<&str> = schema.fields().iter().map(|f| f.name().as_str()).collect();
     assert_eq!(
         col_names,
-        vec!["chunk_id", "parent_id", "filename", "vector_text", "context_payload", "metadata", "vector"]
+        vec![
+            "chunk_id",
+            "parent_id",
+            "filename",
+            "vector_text",
+            "context_payload",
+            "metadata",
+            "vector"
+        ]
     );
 }
 
@@ -103,7 +118,11 @@ async fn test_differential_sync_lifecycle_and_orphan_purge() {
 
     // 1. First sync pass: both files are deltas
     let deltas_1 = manifest.compute_deltas(&discovered).unwrap();
-    assert_eq!(deltas_1.len(), 2, "Initial pass must report all files as deltas");
+    assert_eq!(
+        deltas_1.len(),
+        2,
+        "Initial pass must report all files as deltas"
+    );
     for d in &deltas_1 {
         manifest.update(d.filename.clone(), d.hash.clone());
     }
@@ -113,9 +132,17 @@ async fn test_differential_sync_lifecycle_and_orphan_purge() {
     assert_eq!(deltas_2.len(), 0, "Idempotent pass must report 0 deltas");
 
     // 3. Mutate one file: exactly 1 delta detected
-    std::fs::write(&file_1, "# Core Engine\n\nPure Rust core with async Tokio runtime.").unwrap();
+    std::fs::write(
+        &file_1,
+        "# Core Engine\n\nPure Rust core with async Tokio runtime.",
+    )
+    .unwrap();
     let deltas_3 = manifest.compute_deltas(&discovered).unwrap();
-    assert_eq!(deltas_3.len(), 1, "Mutated file must be the only detected delta");
+    assert_eq!(
+        deltas_3.len(),
+        1,
+        "Mutated file must be the only detected delta"
+    );
     assert_eq!(deltas_3[0].filename, file_1.display().to_string());
     manifest.update(deltas_3[0].filename.clone(), deltas_3[0].hash.clone());
 
@@ -127,13 +154,25 @@ async fn test_differential_sync_lifecycle_and_orphan_purge() {
     assert_eq!(orphans[0], file_2.display().to_string());
 
     // 5. Purge orphan vectors from LanceDB storage
+    assert_orphan_purge_in_storage(&temp_dir, &file_2).await;
+
+    // Remove from manifest
+    manifest.remove(&orphans[0]);
+    assert!(!manifest.contains_file(&orphans[0]));
+    assert!(manifest.contains_file(&file_1.display().to_string()));
+}
+
+async fn assert_orphan_purge_in_storage(temp_dir: &TempTestDir, orphan_file: &std::path::Path) {
     let lancedb_dir = temp_dir.sub_dir("lancedb");
-    let db = lancedb::connect(&lancedb_dir.display().to_string()).execute().await.unwrap();
+    let db = lancedb::connect(&lancedb_dir.display().to_string())
+        .execute()
+        .await
+        .unwrap();
 
     let orphan_chunk = IndexChunk {
         chunk_id: "specs/002_mcp.md_b0_c0".to_string(),
         parent_id: Some("specs/002_mcp.md_b0".to_string()),
-        filename: file_2.display().to_string(),
+        filename: orphan_file.display().to_string(),
         vector_text: "Stdio wire format".to_string(),
         context_payload: "Payload".to_string(),
         metadata: "{}".to_string(),
@@ -141,23 +180,22 @@ async fn test_differential_sync_lifecycle_and_orphan_purge() {
     };
 
     let batch = ArrowBatchBuilder::build(vec![orphan_chunk], 384).unwrap();
-    LanceStorage::write_batch(&db, "test_adrs", batch).await.unwrap();
+    LanceStorage::write_batch(&db, "test_adrs", batch)
+        .await
+        .unwrap();
 
-    // Verify row exists prior to invalidation
     let table = db.open_table("test_adrs").execute().await.unwrap();
     assert_eq!(table.count_rows(None).await.unwrap(), 1);
 
-    // Invalidate stale orphan file
-    LanceStorage::invalidate_stale_files(&db, "test_adrs", &[&orphans[0]]).await;
+    let orphan_path_str = orphan_file.display().to_string();
+    LanceStorage::invalidate_stale_files(&db, "test_adrs", &[&orphan_path_str]).await;
 
-    // Verify table has 0 rows after invalidation
     let table_after = db.open_table("test_adrs").execute().await.unwrap();
-    assert_eq!(table_after.count_rows(None).await.unwrap(), 0, "Orphaned vectors must be purged");
-
-    // Remove from manifest
-    manifest.remove(&orphans[0]);
-    assert!(!manifest.contains_file(&orphans[0]));
-    assert!(manifest.contains_file(&file_1.display().to_string()));
+    assert_eq!(
+        table_after.count_rows(None).await.unwrap(),
+        0,
+        "Orphaned vectors must be purged"
+    );
 }
 
 #[tokio::test]

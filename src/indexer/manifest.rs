@@ -1,7 +1,7 @@
+use crate::error::CompitentError;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use sha2::{Digest, Sha256};
-use crate::error::CompitentError;
 
 pub const MANIFEST_FILENAME: &str = ".manifest.json";
 
@@ -57,14 +57,21 @@ impl Manifest {
         self.entries.remove(filename);
     }
 
-    pub fn find_orphans<P: AsRef<Path>>(&self, adr_paths: &[P], discovered_files: &[PathBuf]) -> Vec<String> {
-        let discovered_set: std::collections::HashSet<PathBuf> = discovered_files.iter().cloned().collect();
+    pub fn find_orphans<P: AsRef<Path>>(
+        &self,
+        adr_paths: &[P],
+        discovered_files: &[PathBuf],
+    ) -> Vec<String> {
+        let discovered_set: std::collections::HashSet<PathBuf> =
+            discovered_files.iter().cloned().collect();
 
         self.entries
             .keys()
             .filter(|existing_str| {
                 let existing_path = Path::new(existing_str);
-                let under_scanned_dir = adr_paths.iter().any(|dir| existing_path.starts_with(dir.as_ref()));
+                let under_scanned_dir = adr_paths
+                    .iter()
+                    .any(|dir| existing_path.starts_with(dir.as_ref()));
                 under_scanned_dir && !discovered_set.contains(existing_path)
             })
             .cloned()
@@ -113,7 +120,10 @@ impl Manifest {
             return ("{}".to_string(), content.to_string());
         };
 
-        if let Some(end_rel) = search_slice.find("\n---").or_else(|| search_slice.find("\r\n---")) {
+        if let Some(end_rel) = search_slice
+            .find("\n---")
+            .or_else(|| search_slice.find("\r\n---"))
+        {
             let yaml_str = &search_slice[..end_rel];
             let after_fence_start = &search_slice[end_rel..];
             let fence_marker = if let Some(stripped) = after_fence_start.strip_prefix("\r\n---") {
@@ -147,12 +157,16 @@ mod tests {
     #[test]
     fn test_extract_metadata_crlf_and_lf_parity() {
         let lf_content = "---\ntitle: ADR Test\nstatus: accepted\n---\n# Body\nSome text";
-        let crlf_content = "---\r\ntitle: ADR Test\r\nstatus: accepted\r\n---\r\n# Body\r\nSome text";
+        let crlf_content =
+            "---\r\ntitle: ADR Test\r\nstatus: accepted\r\n---\r\n# Body\r\nSome text";
 
         let (meta_lf, body_lf) = Manifest::extract_metadata(lf_content);
         let (meta_crlf, body_crlf) = Manifest::extract_metadata(crlf_content);
 
-        assert_eq!(meta_lf, meta_crlf, "Metadata JSON must match regardless of CRLF or LF line endings");
+        assert_eq!(
+            meta_lf, meta_crlf,
+            "Metadata JSON must match regardless of CRLF or LF line endings"
+        );
         assert!(meta_lf.contains("\"title\":\"ADR Test\""));
         assert_eq!(body_lf, "# Body\nSome text");
         assert_eq!(body_crlf, "# Body\r\nSome text");
@@ -220,15 +234,23 @@ mod tests {
 
     #[test]
     fn test_corrupted_manifest_recovery_fallback() {
-        let temp_dir = std::env::temp_dir().join(format!("intent_corrupt_manifest_{}", std::process::id()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("intent_corrupt_manifest_{}", std::process::id()));
         let manifest_path = temp_dir.join(".manifest.json");
         std::fs::create_dir_all(&temp_dir).unwrap();
 
         // Write corrupt JSON (e.g. truncated file or git conflict markers)
-        std::fs::write(&manifest_path, "<<<<<<< HEAD\n{\"file.md\": \"hash\"\n=======").unwrap();
+        std::fs::write(
+            &manifest_path,
+            "<<<<<<< HEAD\n{\"file.md\": \"hash\"\n=======",
+        )
+        .unwrap();
 
         let recovered = Manifest::load(&manifest_path);
-        assert!(!recovered.contains_file("file.md"), "Corrupted manifest must fall back to empty state without panic");
+        assert!(
+            !recovered.contains_file("file.md"),
+            "Corrupted manifest must fall back to empty state without panic"
+        );
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

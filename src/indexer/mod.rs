@@ -3,9 +3,9 @@ pub mod manifest;
 pub mod markdown_chunker;
 pub mod storage;
 
-use std::path::{Path, PathBuf};
 use futures::stream::{iter, StreamExt};
 use lancedb::connect;
+use std::path::{Path, PathBuf};
 
 use crate::engine::CompitentEngine;
 use crate::error::CompitentError;
@@ -129,13 +129,7 @@ pub async fn index_adrs<P: AsRef<Path> + std::fmt::Debug>(
     let db = connect(&engine.config.lancedb_path).execute().await?;
 
     if !orphans.is_empty() {
-        tracing::info!("Purging {} orphaned files from index...", orphans.len());
-        let orphan_refs: Vec<&str> = orphans.iter().map(|s| s.as_str()).collect();
-        LanceStorage::invalidate_stale_files(&db, crate::DEFAULT_TABLE_NAME, &orphan_refs).await;
-        for orphan in &orphans {
-            manifest.remove(orphan);
-        }
-        manifest.save(&manifest_path)?;
+        purge_orphaned_files(&db, &mut manifest, &manifest_path, &orphans).await?;
     }
 
     if deltas.is_empty() {
@@ -165,4 +159,19 @@ pub async fn index_adrs<P: AsRef<Path> + std::fmt::Debug>(
     LanceStorage::build_fts_index(&table, "context_payload").await?;
 
     Ok(())
+}
+
+async fn purge_orphaned_files(
+    db: &lancedb::Connection,
+    manifest: &mut Manifest,
+    manifest_path: &Path,
+    orphans: &[String],
+) -> Result<(), CompitentError> {
+    tracing::info!("Purging {} orphaned files from index...", orphans.len());
+    let orphan_refs: Vec<&str> = orphans.iter().map(|s| s.as_str()).collect();
+    LanceStorage::invalidate_stale_files(db, crate::DEFAULT_TABLE_NAME, &orphan_refs).await;
+    for orphan in orphans {
+        manifest.remove(orphan);
+    }
+    manifest.save(manifest_path)
 }

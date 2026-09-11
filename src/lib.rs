@@ -1,14 +1,14 @@
 //! Compitent Engine
-//! 
+//!
 //! A Universal Semantic Memory Layer for AI Agents
 
 pub const DEFAULT_TABLE_NAME: &str = "adrs";
 
-pub mod telemetry;
 pub mod config;
 pub mod engine;
 pub mod indexer;
 pub mod mcp;
+pub mod telemetry;
 
 // Re-export core types
 pub use error::CompitentError;

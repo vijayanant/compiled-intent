@@ -1,7 +1,7 @@
-use std::sync::Arc;
+use crate::error::CompitentError;
 use arrow::array::{FixedSizeListArray, Float32Array, RecordBatch, StringArray};
 use arrow::datatypes::{DataType, Field, Schema};
-use crate::error::CompitentError;
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct IndexChunk {
@@ -132,7 +132,8 @@ mod tests {
             vector: vec![0.5, 0.5],
         };
 
-        let batch = ArrowBatchBuilder::build(vec![chunk], 2).expect("Should build batch with null parent");
+        let batch =
+            ArrowBatchBuilder::build(vec![chunk], 2).expect("Should build batch with null parent");
         assert_eq!(batch.num_rows(), 1);
         let parent_col = batch
             .column_by_name("parent_id")

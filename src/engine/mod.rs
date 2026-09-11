@@ -10,7 +10,7 @@ pub struct CompitentEngine {
 
 impl CompitentEngine {
     pub fn new(config: EngineConfig) -> Self {
-        Self { 
+        Self {
             config,
             client: reqwest::Client::new(),
         }
@@ -23,44 +23,39 @@ impl CompitentEngine {
             "model": self.config.embedding_model
         });
 
-        let res = self.client.post(&self.config.llama_endpoint)
+        let res = self
+            .client
+            .post(&self.config.llama_endpoint)
             .json(&payload)
             .send()
             .await?;
 
         if !res.status().is_success() {
-            return Err(CompitentError::Network(format!("API returned {}", res.status())));
+            return Err(CompitentError::Network(format!(
+                "API returned {}",
+                res.status()
+            )));
         }
 
         let data: serde_json::Value = res.json().await?;
-        
-        if let Some(embedding) = data["data"][0]["embedding"].as_array() {
-            let floats: Vec<f32> = embedding.iter().filter_map(|v| v.as_f64().map(|f| f as f32)).collect();
-            let expected_dims = self.config.embedding_dimensions as usize;
-            if floats.len() != expected_dims {
-                return Err(CompitentError::Internal(format!(
-                    "Embedding dimension mismatch: expected {}, got {}",
-                    expected_dims,
-                    floats.len()
-                )));
-            }
-            return Ok(floats);
-        }
-
-        Err(CompitentError::Internal("Malformed embedding response".to_string()))
+        parse_and_validate_embedding(&data, self.config.embedding_dimensions as usize)
     }
 
-    pub async fn search(&self, query_text: &str, limit: usize, mode: &str) -> Result<Vec<serde_json::Value>, CompitentError> {
-        let db = lancedb::connect(&self.config.lancedb_path).execute().await?;
-        let table = db.open_table(crate::DEFAULT_TABLE_NAME).execute().await?;
-
-        use futures::stream::StreamExt;
-        use lancedb::query::{QueryBase, QueryExecutionOptions, ExecutableQuery};
+    async fn execute_search_stream(
+        &self,
+        table: &lancedb::Table,
+        query_text: &str,
+        limit: usize,
+        mode: &str,
+    ) -> Result<std::pin::Pin<Box<dyn lancedb::arrow::RecordBatchStream + Send>>, CompitentError>
+    {
         use lance_index::scalar::FullTextSearchQuery;
-        
-        let mut stream = match mode {
+        use lancedb::query::{ExecutableQuery, QueryBase, QueryExecutionOptions};
+
+        let stream = match mode {
             "fts" => {
-                table.query()
+                table
+                    .query()
                     .full_text_search(FullTextSearchQuery::new(query_text.to_string()))
                     .limit(limit)
                     .execute()
@@ -68,22 +63,43 @@ impl CompitentEngine {
             }
             "hybrid" => {
                 let embedding = self.get_embedding(query_text).await?;
-                table.query()
+                table
+                    .query()
                     .full_text_search(FullTextSearchQuery::new(query_text.to_string()))
                     .nearest_to(embedding.as_slice())?
                     .limit(limit)
                     .execute_hybrid(QueryExecutionOptions::default())
                     .await?
             }
-            _ => { // default to pure vector
+            _ => {
+                // default to pure vector
                 let embedding = self.get_embedding(query_text).await?;
-                table.query()
+                table
+                    .query()
                     .nearest_to(embedding.as_slice())?
                     .limit(limit)
                     .execute()
                     .await?
             }
         };
+        Ok(stream)
+    }
+
+    pub async fn search(
+        &self,
+        query_text: &str,
+        limit: usize,
+        mode: &str,
+    ) -> Result<Vec<serde_json::Value>, CompitentError> {
+        let db = lancedb::connect(&self.config.lancedb_path)
+            .execute()
+            .await?;
+        let table = db.open_table(crate::DEFAULT_TABLE_NAME).execute().await?;
+
+        use futures::stream::StreamExt;
+        let mut stream = self
+            .execute_search_stream(&table, query_text, limit, mode)
+            .await?;
 
         let mut chunks = Vec::new();
         while let Some(batch_result) = stream.next().await {
@@ -96,8 +112,11 @@ impl CompitentEngine {
 
     pub async fn get_context(&self, chunk_id: &str) -> Result<String, CompitentError> {
         // Extract the filename from the chunk_id (e.g., "posts/index.md_b0_c0" -> "posts/index.md")
-        let filename = chunk_id.rsplit_once("_b").map(|(prefix, _)| prefix).unwrap_or(chunk_id);
-        
+        let filename = chunk_id
+            .rsplit_once("_b")
+            .map(|(prefix, _)| prefix)
+            .unwrap_or(chunk_id);
+
         Ok(tokio::fs::read_to_string(filename).await?)
     }
 }
@@ -132,4 +151,28 @@ fn extract_batch_results(batch: &arrow::array::RecordBatch) -> Vec<serde_json::V
         }
     }
     chunks
+}
+
+fn parse_and_validate_embedding(
+    data: &serde_json::Value,
+    expected_dims: usize,
+) -> Result<Vec<f32>, CompitentError> {
+    if let Some(embedding) = data["data"][0]["embedding"].as_array() {
+        let floats: Vec<f32> = embedding
+            .iter()
+            .filter_map(|v| v.as_f64().map(|f| f as f32))
+            .collect();
+        if floats.len() != expected_dims {
+            return Err(CompitentError::Internal(format!(
+                "Embedding dimension mismatch: expected {}, got {}",
+                expected_dims,
+                floats.len()
+            )));
+        }
+        return Ok(floats);
+    }
+
+    Err(CompitentError::Internal(
+        "Malformed embedding response".to_string(),
+    ))
 }
