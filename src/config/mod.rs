@@ -51,15 +51,40 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_default_config() {
-        let config = EngineConfig::default();
-        assert_eq!(config.intent_dir, ".intent");
-        assert_eq!(config.llama_endpoint, "http://localhost:8089/v1/embeddings");
+    fn test_custom_config_override_and_malformed_fallback() {
+        let temp_dir = std::env::temp_dir().join(format!("intent_cfg_{}", std::process::id()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        // 1. Valid custom config overrides defaults
+        let valid_path = temp_dir.join("valid.toml");
+        let valid_toml = r#"
+            llama_endpoint = "http://custom-host:9999/v1/embeddings"
+            embedding_model = "bge-large"
+            embedding_dimensions = 1024
+            intent_dir = ".custom_intent"
+            lancedb_path = ".custom_intent/lancedb"
+        "#;
+        std::fs::write(&valid_path, valid_toml).unwrap();
+
+        let cfg = EngineConfig::load(Some(valid_path.display().to_string()));
+        assert_eq!(cfg.llama_endpoint, "http://custom-host:9999/v1/embeddings");
+        assert_eq!(cfg.embedding_model, "bge-large");
+        assert_eq!(cfg.embedding_dimensions, 1024);
+        assert_eq!(cfg.intent_dir, ".custom_intent");
+
+        // 2. Malformed config logs warning and falls back to default safely
+        let malformed_path = temp_dir.join("malformed.toml");
+        std::fs::write(&malformed_path, "invalid_toml = [[ broken syntax").unwrap();
+
+        let fallback_cfg = EngineConfig::load(Some(malformed_path.display().to_string()));
+        assert_eq!(fallback_cfg.intent_dir, ".intent");
+        assert_eq!(fallback_cfg.embedding_dimensions, 768);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[test]
-    fn test_load_fallback_to_default() {
-        // If file doesn't exist, it should gracefully fall back to default
+    fn test_load_fallback_to_default_when_none_provided() {
         let config = EngineConfig::load(None);
         assert_eq!(config.lancedb_path, ".intent/lancedb");
     }

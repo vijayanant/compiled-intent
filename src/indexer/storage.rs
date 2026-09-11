@@ -84,3 +84,40 @@ impl LanceStorage {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::indexer::{ArrowBatchBuilder, IndexChunk};
+
+    #[tokio::test]
+    async fn test_sql_quote_escaping_in_invalidation() {
+        let temp_dir = std::env::temp_dir().join(format!("intent_storage_test_{}", std::process::id()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let db = lancedb::connect(&temp_dir.display().to_string()).execute().await.unwrap();
+
+        let quote_file = "docs/user's_spec.md";
+        let chunk = IndexChunk {
+            chunk_id: format!("{}_b0_c0", quote_file),
+            parent_id: Some(format!("{}_b0", quote_file)),
+            filename: quote_file.to_string(),
+            vector_text: "content".to_string(),
+            context_payload: "payload".to_string(),
+            metadata: "{}".to_string(),
+            vector: vec![0.1; 4],
+        };
+
+        let batch = ArrowBatchBuilder::build(vec![chunk], 4).unwrap();
+        let table = LanceStorage::write_batch(&db, "test_quotes", batch).await.unwrap();
+        assert_eq!(table.count_rows(None).await.unwrap(), 1);
+
+        // Invalidate file with single quote in filename
+        LanceStorage::invalidate_stale_files(&db, "test_quotes", &[quote_file]).await;
+
+        let table_after = db.open_table("test_quotes").execute().await.unwrap();
+        assert_eq!(table_after.count_rows(None).await.unwrap(), 0, "Quoted filename must be cleanly deleted");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+}

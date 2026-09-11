@@ -118,20 +118,31 @@ pub async fn index_adrs<P: AsRef<Path> + std::fmt::Debug>(
     let mut manifest = Manifest::load(&manifest_path);
 
     let md_files = discover_markdown_files(adr_paths);
-    if md_files.is_empty() {
-        tracing::warn!("No markdown files found.");
-        return Ok(());
-    }
-
+    let orphans = manifest.find_orphans(adr_paths, &md_files);
     let deltas = manifest.compute_deltas(&md_files)?;
-    if deltas.is_empty() {
+
+    if deltas.is_empty() && orphans.is_empty() {
         tracing::info!("Cache is warm. All files are up to date. No indexing required.");
         return Ok(());
     }
 
-    tracing::info!("Found {} new/updated files to index.", deltas.len());
-
     let db = connect(&engine.config.lancedb_path).execute().await?;
+
+    if !orphans.is_empty() {
+        tracing::info!("Purging {} orphaned files from index...", orphans.len());
+        let orphan_refs: Vec<&str> = orphans.iter().map(|s| s.as_str()).collect();
+        LanceStorage::invalidate_stale_files(&db, crate::DEFAULT_TABLE_NAME, &orphan_refs).await;
+        for orphan in &orphans {
+            manifest.remove(orphan);
+        }
+        manifest.save(&manifest_path)?;
+    }
+
+    if deltas.is_empty() {
+        return Ok(());
+    }
+
+    tracing::info!("Found {} new/updated files to index.", deltas.len());
 
     let filenames_to_clean: Vec<&str> = deltas
         .iter()

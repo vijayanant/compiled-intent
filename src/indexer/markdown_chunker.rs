@@ -105,3 +105,138 @@ pub fn chunk_markdown(markdown: &str) -> Vec<ParentBlock> {
 
     blocks
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_single_heading() {
+        let md = "# Introduction\n\nThis is a test document.";
+        let blocks = chunk_markdown(md);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].header, "Introduction");
+        assert!(blocks[0].payload.contains("This is a test document."));
+        assert_eq!(blocks[0].children.len(), 1);
+    }
+
+    #[test]
+    fn test_multiple_hierarchical_headings() {
+        let md = r#"
+# Architecture
+
+Core system design.
+
+## Database
+
+LanceDB vector storage.
+
+### Indexing
+
+Full-text search with Tantivy.
+"#;
+        let blocks = chunk_markdown(md);
+        assert_eq!(blocks.len(), 3);
+        assert_eq!(blocks[0].header, "Architecture");
+        assert_eq!(blocks[1].header, "Database");
+        assert_eq!(blocks[2].header, "Indexing");
+    }
+
+    #[test]
+    fn test_root_fallback_when_no_headers() {
+        let md = "Just a raw paragraph without any markdown headings.";
+        let blocks = chunk_markdown(md);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].header, "Document Root");
+        assert!(blocks[0].payload.contains("Just a raw paragraph"));
+    }
+
+    #[test]
+    fn test_code_block_with_hash_is_not_heading() {
+        let md = r#"
+# Code Sample
+
+```python
+# This is a Python comment, not a markdown heading
+def hello():
+    return "world"
+```
+"#;
+        let blocks = chunk_markdown(md);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].header, "Code Sample");
+        assert!(blocks[0].payload.contains("# This is a Python comment"));
+    }
+
+    #[test]
+    fn test_empty_and_whitespace_documents() {
+        assert!(chunk_markdown("").is_empty());
+        assert!(chunk_markdown("   \n\n  \t ").is_empty());
+    }
+
+    #[test]
+    fn test_paragraph_separation() {
+        let md = "# Title\n\nFirst paragraph.\n\nSecond paragraph.";
+        let blocks = chunk_markdown(md);
+        assert_eq!(blocks.len(), 1);
+        assert!(blocks[0].payload.contains("First paragraph.\n\nSecond paragraph."));
+    }
+
+    #[test]
+    fn test_sliding_window_multibyte_unicode() {
+        let text = "こんにちは世界！".repeat(30); // multibyte characters
+        let windows = generate_sliding_windows(&text, 100, 20);
+        assert!(windows.len() > 1);
+        for w in &windows {
+            assert!(!w.is_empty());
+            assert!(w.chars().count() <= 100);
+        }
+    }
+
+    #[test]
+    fn test_sliding_window_shorter_than_window_size() {
+        let text = "Short text";
+        let windows = generate_sliding_windows(text, 300, 50);
+        assert_eq!(windows.len(), 1);
+        assert_eq!(windows[0], "Short text");
+    }
+
+    #[test]
+    fn test_sliding_window_overlap_step() {
+        let text = "abcdefghij".repeat(50); // 500 chars
+        let windows = generate_sliding_windows(&text, 100, 20);
+        assert_eq!(windows.len(), 6);
+        assert_eq!(windows[0].chars().count(), 100);
+    }
+
+    #[test]
+    fn test_sliding_window_exact_boundaries_and_zero_step_protection() {
+        // Text of exact window length (300 chars) must produce exactly 1 chunk, no empty tail
+        let exact_300 = "a".repeat(300);
+        let win_300 = generate_sliding_windows(&exact_300, 300, 50);
+        assert_eq!(win_300.len(), 1);
+        assert_eq!(win_300[0].len(), 300);
+
+        // Text of 301 chars must produce 2 chunks
+        let win_301 = generate_sliding_windows(&"b".repeat(301), 300, 50);
+        assert_eq!(win_301.len(), 2);
+
+        // Pathological case: overlap >= window_size must not loop infinitely
+        let safe_win = generate_sliding_windows("test text", 10, 10);
+        assert_eq!(safe_win.len(), 1);
+    }
+
+    #[test]
+    fn test_consecutive_headings_without_body() {
+        let md = r#"
+# System Design
+## Database Layer
+LanceDB storage engine.
+"#;
+        let blocks = chunk_markdown(md);
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0].header, "System Design");
+        assert_eq!(blocks[1].header, "Database Layer");
+        assert!(blocks[1].payload.contains("LanceDB storage engine."));
+    }
+}

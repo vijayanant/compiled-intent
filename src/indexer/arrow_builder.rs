@@ -94,6 +94,7 @@ impl ArrowBatchBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arrow::array::Array;
 
     #[test]
     fn test_arrow_batch_builder() {
@@ -110,5 +111,33 @@ mod tests {
         let batch = ArrowBatchBuilder::build(vec![chunk], 4).expect("Should build RecordBatch");
         assert_eq!(batch.num_rows(), 1);
         assert_eq!(batch.num_columns(), 7);
+    }
+
+    #[test]
+    fn test_empty_chunks_batch() {
+        let batch = ArrowBatchBuilder::build(vec![], 4).expect("Should build empty RecordBatch");
+        assert_eq!(batch.num_rows(), 0);
+        assert_eq!(batch.num_columns(), 7);
+    }
+
+    #[test]
+    fn test_batch_with_none_parent_id() {
+        let chunk = IndexChunk {
+            chunk_id: "root.md_c0".to_string(),
+            parent_id: None,
+            filename: "root.md".to_string(),
+            vector_text: "test".to_string(),
+            context_payload: "payload".to_string(),
+            metadata: "{}".to_string(),
+            vector: vec![0.5, 0.5],
+        };
+
+        let batch = ArrowBatchBuilder::build(vec![chunk], 2).expect("Should build batch with null parent");
+        assert_eq!(batch.num_rows(), 1);
+        let parent_col = batch
+            .column_by_name("parent_id")
+            .and_then(|c| c.as_any().downcast_ref::<StringArray>())
+            .expect("parent_id column must exist");
+        assert!(parent_col.is_null(0));
     }
 }

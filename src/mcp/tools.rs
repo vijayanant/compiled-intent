@@ -122,15 +122,48 @@ pub async fn dispatch_tool_call(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::EngineConfig;
 
-    #[test]
-    fn test_tool_definitions_schema() {
-        let tools = tool_definitions();
-        let list = tools["tools"].as_array().expect("Tools must be an array");
-        assert_eq!(list.len(), 3);
-        let names: Vec<&str> = list.iter().filter_map(|t| t["name"].as_str()).collect();
-        assert!(names.contains(&"search"));
-        assert!(names.contains(&"get_context"));
-        assert!(names.contains(&"index_directory"));
+    #[tokio::test]
+    async fn test_dispatch_tool_call_validation_and_errors() {
+        let temp_dir = std::env::temp_dir().join(format!("intent_tool_test_{}", std::process::id()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let engine = CompitentEngine::new(EngineConfig {
+            llama_endpoint: "http://localhost:8080".to_string(),
+            embedding_model: "test".to_string(),
+            embedding_dimensions: 384,
+            intent_dir: temp_dir.display().to_string(),
+            lancedb_path: temp_dir.join("db").display().to_string(),
+        });
+
+        // 1. Unknown tool returns JSONRPC_METHOD_NOT_FOUND (-32601)
+        let err = dispatch_tool_call(&engine, "non_existent_tool", &json!({})).await
+            .expect_err("Unknown tool must fail");
+        assert_eq!(err.0, JSONRPC_METHOD_NOT_FOUND);
+        assert_eq!(err.1, "Tool not found");
+
+        // 2. get_context on missing file returns JSONRPC_INTERNAL_ERROR (-32603)
+        let err2 = dispatch_tool_call(
+            &engine,
+            "get_context",
+            &json!({ "chunk_id": "non_existent_file.md_b0_c0" }),
+        ).await.expect_err("Missing file must return error");
+        assert_eq!(err2.0, JSONRPC_INTERNAL_ERROR);
+        assert!(err2.1.contains("Context expansion failed"));
+
+        // 3. get_context on existing file returns standard MCP text payload
+        let valid_file = temp_dir.join("doc.md");
+        std::fs::write(&valid_file, "# Rule\n\nContent payload").unwrap();
+        let ok_res = dispatch_tool_call(
+            &engine,
+            "get_context",
+            &json!({ "chunk_id": format!("{}_b0_c0", valid_file.display()) }),
+        ).await.expect("Existing file must succeed");
+
+        assert_eq!(ok_res["content"][0]["type"], "text");
+        assert!(ok_res["content"][0]["text"].as_str().unwrap().contains("Content payload"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

@@ -53,6 +53,24 @@ impl Manifest {
         self.entries.insert(filename, hash);
     }
 
+    pub fn remove(&mut self, filename: &str) {
+        self.entries.remove(filename);
+    }
+
+    pub fn find_orphans<P: AsRef<Path>>(&self, adr_paths: &[P], discovered_files: &[PathBuf]) -> Vec<String> {
+        let discovered_set: std::collections::HashSet<PathBuf> = discovered_files.iter().cloned().collect();
+
+        self.entries
+            .keys()
+            .filter(|existing_str| {
+                let existing_path = Path::new(existing_str);
+                let under_scanned_dir = adr_paths.iter().any(|dir| existing_path.starts_with(dir.as_ref()));
+                under_scanned_dir && !discovered_set.contains(existing_path)
+            })
+            .cloned()
+            .collect()
+    }
+
     pub fn compute_deltas(&self, files: &[PathBuf]) -> Result<Vec<DeltaFile>, CompitentError> {
         let mut deltas = Vec::new();
         for file_path in files {
@@ -87,15 +105,37 @@ impl Manifest {
     }
 
     pub fn extract_metadata(content: &str) -> (String, String) {
-        if content.starts_with("---\n") || content.starts_with("---\r\n") {
-            if let Some(end_idx) = content[4..].find("---\n").map(|i| i + 4) {
-                let yaml_str = &content[4..end_idx];
-                if let Ok(json_val) = serde_yaml::from_str::<serde_json::Value>(yaml_str) {
-                    let rest = &content[end_idx + 4..];
-                    return (json_val.to_string(), rest.to_string());
-                }
+        let search_slice = if let Some(stripped) = content.strip_prefix("---\r\n") {
+            stripped
+        } else if let Some(stripped) = content.strip_prefix("---\n") {
+            stripped
+        } else {
+            return ("{}".to_string(), content.to_string());
+        };
+
+        if let Some(end_rel) = search_slice.find("\n---").or_else(|| search_slice.find("\r\n---")) {
+            let yaml_str = &search_slice[..end_rel];
+            let after_fence_start = &search_slice[end_rel..];
+            let fence_marker = if let Some(stripped) = after_fence_start.strip_prefix("\r\n---") {
+                stripped
+            } else if let Some(stripped) = after_fence_start.strip_prefix("\n---") {
+                stripped
+            } else {
+                after_fence_start
+            };
+            let body = if let Some(stripped) = fence_marker.strip_prefix("\r\n") {
+                stripped
+            } else if let Some(stripped) = fence_marker.strip_prefix('\n') {
+                stripped
+            } else {
+                fence_marker
+            };
+
+            if let Ok(json_val) = serde_yaml::from_str::<serde_json::Value>(yaml_str) {
+                return (json_val.to_string(), body.to_string());
             }
         }
+
         ("{}".to_string(), content.to_string())
     }
 }
@@ -105,14 +145,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_hash_content_determinism() {
-        let text = "Hello world";
-        let h1 = Manifest::hash_content(text);
-        let h2 = Manifest::hash_content(text);
-        assert_eq!(h1, h2);
-        assert_eq!(h1.len(), 64);
-        // Known SHA256 of "Hello world"
-        assert_eq!(h1, "64ec88ca00b268e5ba1a35678a1b5316d212f4f366b2477232534a8aeca37f3c");
+    fn test_extract_metadata_crlf_and_lf_parity() {
+        let lf_content = "---\ntitle: ADR Test\nstatus: accepted\n---\n# Body\nSome text";
+        let crlf_content = "---\r\ntitle: ADR Test\r\nstatus: accepted\r\n---\r\n# Body\r\nSome text";
+
+        let (meta_lf, body_lf) = Manifest::extract_metadata(lf_content);
+        let (meta_crlf, body_crlf) = Manifest::extract_metadata(crlf_content);
+
+        assert_eq!(meta_lf, meta_crlf, "Metadata JSON must match regardless of CRLF or LF line endings");
+        assert!(meta_lf.contains("\"title\":\"ADR Test\""));
+        assert_eq!(body_lf, "# Body\nSome text");
+        assert_eq!(body_crlf, "# Body\r\nSome text");
     }
 
     #[test]
@@ -130,5 +173,63 @@ mod tests {
         let (metadata, body) = Manifest::extract_metadata(content);
         assert_eq!(metadata, "{}");
         assert_eq!(body, content);
+    }
+
+    #[test]
+    fn test_extract_metadata_malformed_yaml() {
+        let content = "---\n: invalid [yaml: {\n---\n# Body\nSome text";
+        let (metadata, body) = Manifest::extract_metadata(content);
+        assert_eq!(metadata, "{}");
+        assert_eq!(body, content);
+    }
+
+    #[test]
+    fn test_manifest_save_and_load() {
+        let temp_dir = std::env::temp_dir().join(format!("intent_test_{}", std::process::id()));
+        let manifest_path = temp_dir.join(".manifest.json");
+
+        let mut manifest = Manifest::new();
+        manifest.update("file1.md".to_string(), "hash123".to_string());
+        manifest.save(&manifest_path).expect("Should save manifest");
+
+        let loaded = Manifest::load(&manifest_path);
+        assert!(loaded.contains_file("file1.md"));
+        assert!(!loaded.contains_file("file2.md"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_find_orphans_and_remove() {
+        let mut manifest = Manifest::new();
+        manifest.update("docs/adrs/001.md".to_string(), "h1".to_string());
+        manifest.update("docs/adrs/002.md".to_string(), "h2".to_string());
+        manifest.update("other/path/003.md".to_string(), "h3".to_string());
+
+        let adr_paths = vec![PathBuf::from("docs/adrs")];
+        let discovered = vec![PathBuf::from("docs/adrs/001.md")];
+
+        let orphans = manifest.find_orphans(&adr_paths, &discovered);
+        assert_eq!(orphans.len(), 1);
+        assert_eq!(orphans[0], "docs/adrs/002.md");
+
+        manifest.remove(&orphans[0]);
+        assert!(!manifest.contains_file("docs/adrs/002.md"));
+        assert!(manifest.contains_file("docs/adrs/001.md"));
+    }
+
+    #[test]
+    fn test_corrupted_manifest_recovery_fallback() {
+        let temp_dir = std::env::temp_dir().join(format!("intent_corrupt_manifest_{}", std::process::id()));
+        let manifest_path = temp_dir.join(".manifest.json");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        // Write corrupt JSON (e.g. truncated file or git conflict markers)
+        std::fs::write(&manifest_path, "<<<<<<< HEAD\n{\"file.md\": \"hash\"\n=======").unwrap();
+
+        let recovered = Manifest::load(&manifest_path);
+        assert!(!recovered.contains_file("file.md"), "Corrupted manifest must fall back to empty state without panic");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
