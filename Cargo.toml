@@ -25,9 +25,5 @@ walkdir = "2.5.0"
 lance-index = "10.0.0"
 
 [[bin]]
-name = "compiled-intent"
-path = "src/main.rs"
-
-[[bin]]
 name = "intent"
-path = "src/bin/cli.rs"
+path = "src/main.rs"

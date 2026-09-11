@@ -13,8 +13,7 @@ Finally, as a tool designed to enforce Architectural Decision Records (ADRs), we
 ## Decision
 1. **Directory Structure:** Refactor the codebase into a modular Library/Binary structure:
    - `src/lib.rs`: The public library API and re-exports.
-   - `src/main.rs`: The headless MCP server daemon entrypoint.
-   - `src/bin/cli.rs`: The human-friendly and CI/CD CLI tool (`intent`).
+   - `src/main.rs`: The unified application binary (`intent`), providing CLI commands (`index`, `search`) and the headless MCP server daemon (`serve`).
    - `src/config/`: Engine configuration loading and defaults.
    - `src/engine/`: Core retrieval and storage orchestration.
    - `src/indexer/`: Markdown AST chunking, differential manifest tracking, and Arrow/LanceDB storage.
