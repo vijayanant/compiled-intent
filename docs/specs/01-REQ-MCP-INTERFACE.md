@@ -1,7 +1,8 @@
 # 01-REQ-MCP-INTERFACE: Model Context Protocol (MCP) Contract
 
 > [!NOTE] **Architectural Rationale**
-> For the technical evaluation of Stdio transport versus local HTTP/SSE daemons, see [ADR-005: Headless Stdio MCP Protocol and I/O Isolation](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs/005-headless-stdio-mcp-protocol.md).
+> - For the technical evaluation of Stdio transport versus local HTTP/SSE daemons, see [ADR-005: Headless Stdio MCP Protocol and I/O Isolation](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs/005-headless-stdio-mcp-protocol.md).
+> - For the unified normalized relevance score schema, see [ADR-009: Unified Normalized Relevance Score Architecture](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs/009-unified-normalized-relevance-score.md).
 
 ## 1. Transport & Wire Protocol
 
@@ -58,16 +59,17 @@ Searches project documentation using vector, full-text, or hybrid retrieval.
   - `mode` (string, optional, enum: `["hybrid", "fts", "vector"]`, default: `"hybrid"`): Retrieval modality.
   - `namespace` (string, optional): Target directory namespace filter (e.g. `"specs"`, `"adrs"`).
 - **Return Payload**:
-  Returns a serialized JSON array of chunk match objects:
+  Returns a serialized JSON array of chunk match objects sorted in descending score order:
   ```json
   [
     {
       "chunk_id": "docs/adrs/001.md_b0_c0",
       "context": "Source: docs/adrs/001.md\nSection: Decision\n...",
-      "distance": 0.0
+      "score": 0.95
     }
   ]
   ```
+  - `score` (float): Normalized relevance score in range `[0.0, 1.0]` where `1.0` is highest relevance. The legacy `"distance"` key is prohibited.
 
 ### 3.2 `get_context`
 

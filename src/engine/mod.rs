@@ -104,8 +104,15 @@ impl CompitentEngine {
         let mut chunks = Vec::new();
         while let Some(batch_result) = stream.next().await {
             let batch = batch_result?;
-            chunks.extend(extract_batch_results(&batch));
+            chunks.extend(extract_batch_results(&batch, mode));
         }
+
+        chunks.sort_by(|a, b| {
+            let sa = a.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let sb = b.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        chunks.truncate(limit);
 
         Ok(chunks)
     }
@@ -121,16 +128,37 @@ impl CompitentEngine {
     }
 }
 
-fn extract_batch_results(batch: &arrow::array::RecordBatch) -> Vec<serde_json::Value> {
+fn compute_normalized_score(
+    raw_score: Option<f32>,
+    raw_distance: Option<f32>,
+    mode: &str,
+) -> Option<f32> {
+    match mode {
+        "fts" => raw_score.map(|s| (s / (s + 10.0)).clamp(0.0, 1.0)),
+        "vector" => raw_distance.map(|d| (1.0 - d).clamp(0.0, 1.0)),
+        _ => {
+            if let Some(s) = raw_score {
+                let norm = if s > 1.0 { s / (s + 10.0) } else { s };
+                Some(norm.clamp(0.0, 1.0))
+            } else {
+                raw_distance.map(|d| (1.0 - d).clamp(0.0, 1.0))
+            }
+        }
+    }
+}
+
+fn extract_batch_results(batch: &arrow::array::RecordBatch, mode: &str) -> Vec<serde_json::Value> {
     let context_col = batch
         .column_by_name("context_payload")
         .and_then(|c| c.as_any().downcast_ref::<arrow::array::StringArray>());
     let chunk_id_col = batch
         .column_by_name("chunk_id")
         .and_then(|c| c.as_any().downcast_ref::<arrow::array::StringArray>());
-    let distance_col = batch
+    let score_col = batch
         .column_by_name("_score")
-        .or_else(|| batch.column_by_name("_distance"))
+        .and_then(|c| c.as_any().downcast_ref::<arrow::array::Float32Array>());
+    let distance_col = batch
+        .column_by_name("_distance")
         .and_then(|c| c.as_any().downcast_ref::<arrow::array::Float32Array>());
 
     let mut chunks = Vec::new();
@@ -141,10 +169,11 @@ fn extract_batch_results(batch: &arrow::array::RecordBatch) -> Vec<serde_json::V
                 "context": contexts.value(i),
             });
 
-            if let Some(distances) = distance_col {
-                if !distances.is_null(i) {
-                    result_json["distance"] = json!(distances.value(i));
-                }
+            let s = score_col.and_then(|c| (!c.is_null(i)).then(|| c.value(i)));
+            let d = distance_col.and_then(|c| (!c.is_null(i)).then(|| c.value(i)));
+
+            if let Some(norm_score) = compute_normalized_score(s, d, mode) {
+                result_json["score"] = json!(norm_score);
             }
 
             chunks.push(result_json);

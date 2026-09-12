@@ -10,7 +10,7 @@ pub fn tool_definitions() -> Value {
         "tools": [
             {
                 "name": "search",
-                "description": "Performs a semantic or hybrid search against indexed documents. Returns a JSON array of objects with keys: 'chunk_id' (string), 'context' (string), and 'distance' (float). Note: because this uses LanceDB Hybrid Search, the distance metric is derived from Reciprocal Rank Fusion, meaning higher distance scores actually indicate WORSE relevance (a distance of 0.0 is a perfect match).",
+                "description": "Performs a semantic, full-text, or hybrid search against indexed documents. Returns a JSON array of objects with keys: 'chunk_id' (string), 'context' (string), and 'score' (float in range [0.0, 1.0]). Higher scores indicate greater relevance (1.0 is maximum relevance). Results are sorted in descending score order.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {

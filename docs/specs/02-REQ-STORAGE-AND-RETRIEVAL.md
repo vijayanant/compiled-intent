@@ -4,6 +4,7 @@
 >
 > - For storage engine trade-offs (LanceDB vs SQLite-VSS vs Qdrant), see [ADR-001: Embedded Vector Storage](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs/001-embedded-vector-storage.md).
 > - For hybrid search fusion rationale (RRF vs Convex Combination), see [ADR-003: Tri-Modal Retrieval and Reciprocal Rank Fusion](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs/003-tri-modal-search-and-rrf.md).
+> - For the unified normalized relevance score schema and formulas, see [ADR-009: Unified Normalized Relevance Score Architecture](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs/009-unified-normalized-relevance-score.md).
 
 ## 1. Apache Arrow Columnar Storage Schema
 
@@ -29,32 +30,37 @@ All indexed documents MUST be serialized into an Apache Arrow `RecordBatch` conf
 
 The retrieval engine MUST support three first-class search modes:
 
-### 3.1 `fts` (Full-Text Search)
+### 3.1 `fts` (Tantivy Scalar BM25)
 
-- Executes an inverted index BM25 search over `context_payload`.
+- Evaluates query tokens against the Tantivy inverted index on `context_payload`.
 - Used for exact identifier matching (struct names, error codes, CLI flags) without vector semantic dilution.
+- Normalizes raw BM25 score $S$ to $[0.0, 1.0]$ via continuous sigmoid saturation: $\text{score} = \frac{S}{S + 10.0}$.
 
 ### 3.2 `vector` (Dense Nearest-Neighbor)
 
-- Computes cosine distance between the query embedding and the `vector` column.
+- Computes cosine distance $d \in [0, 2]$ between the query embedding and the `vector` column.
 - Used for high-level conceptual, architectural, and synonym queries.
+- Normalizes cosine distance to similarity score: $\text{score} = \max(0.0, 1.0 - d)$.
 
 ### 3.3 `hybrid` (Reciprocal Rank Fusion - Default)
 
 - Executes both dense vector search and Tantivy FTS concurrently.
 - Fuses rank orders using Reciprocal Rank Fusion ($RRF(d) = \sum \frac{1}{k + r_i}$) with rank constant $k=60$.
 - Guarantees exact symbol hits rank at the top while semantically related rules are captured seamlessly.
+- Normalizes RRF score relative to theoretical maximum ($RRF_{\max} = \frac{2}{61} \approx 0.032787$): $\text{score} = \min(1.0, \frac{RRF}{RRF_{\max}})$.
 
 ## 4. Return Structure
 
-All search modes MUST project and return JSON objects with:
+All search modes MUST project and return JSON objects with a unified, normalized `score` key in range `[0.0, 1.0]`:
 
 ```json
 {
   "chunk_id": "docs/specs/01-mcp.md_b0_c0",
   "context": "Source: docs/specs/01-mcp.md\nSection: Overview\n\n# Overview\n...",
-  "distance": 0.0
+  "score": 0.95
 }
 ```
 
-Retrieved child matches resolve to their full parent AST `context_payload`, preventing isolated, ungrounded token fragments from reaching the evaluator.
+- Higher `score` strictly represents greater relevance.
+- The legacy `"distance"` key is prohibited.
+- Retrieved child matches resolve to their full parent AST `context_payload`, preventing isolated, ungrounded token fragments from reaching the evaluator.

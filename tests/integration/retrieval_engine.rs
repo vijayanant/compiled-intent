@@ -4,8 +4,9 @@
 //! and parent context expansion via `get_context`.
 //!
 //! Design Intent References:
-//! - ADR-004: Parent-Child Chunking (Small-to-Big Retrieval)
-//! - ADR-005: Tri-Modal Hybrid Search Architecture
+//! - ADR-002: Markdown AST Parsing and Small-to-Big Retrieval Strategy
+//! - ADR-003: Tri-Modal Retrieval and Reciprocal Rank Fusion (RRF)
+//! - REQ-02: Storage and Retrieval
 
 use super::common::{create_test_engine, TempTestDir};
 use arrow::array::StringArray;
@@ -49,7 +50,7 @@ async fn setup_fts_test_table(db: &lancedb::Connection) -> lancedb::Table {
 
 #[tokio::test]
 async fn test_exact_symbol_retrieval_via_fts() {
-    // Design Intent: ADR-005 (Full-Text Search prevents vector dilution on exact code symbols)
+    // Design Intent: ADR-003 & REQ-02 (Full-Text Search prevents vector dilution on exact code symbols)
     let temp_dir = TempTestDir::new("retrieval_fts");
     let lancedb_dir = temp_dir.sub_dir("lancedb");
 
@@ -92,7 +93,7 @@ async fn test_exact_symbol_retrieval_via_fts() {
 
 #[tokio::test]
 async fn test_get_context_parent_file_expansion() {
-    // Design Intent: ADR-004 (Context expansion resolves child needle back to full parent file)
+    // Design Intent: ADR-002 & REQ-03 (Context expansion resolves child needle back to full parent file)
     let temp_dir = TempTestDir::new("retrieval_ctx");
     let full_content = r#"---
 title: Cryptographic Standards
@@ -120,7 +121,7 @@ RS256 is deprecated and prohibited in production environments.
 
 #[tokio::test]
 async fn test_zero_search_results_handling() {
-    // Design Intent: ADR-005 (Empty search results must return [] cleanly without panic)
+    // Design Intent: ADR-003 & REQ-02 (Empty search results must return [] cleanly without panic)
     let temp_dir = TempTestDir::new("retrieval_empty");
     let lancedb_dir = temp_dir.sub_dir("lancedb");
     let db = lancedb::connect(&lancedb_dir.display().to_string())
@@ -165,4 +166,81 @@ async fn test_zero_search_results_handling() {
         count, 0,
         "Query for non-existent symbol must yield 0 results safely"
     );
+}
+
+async fn setup_score_contract_table(db: &lancedb::Connection) {
+    let chunk_a = IndexChunk {
+        chunk_id: "doc.md_b0_c0".to_string(),
+        parent_id: Some("doc.md_b0".to_string()),
+        filename: "doc.md".to_string(),
+        vector_text: "SessionLedger high priority token".to_string(),
+        context_payload: "SessionLedger audit log implementation details".to_string(),
+        metadata: "{}".to_string(),
+        vector: vec![0.1; 384],
+    };
+    let chunk_b = IndexChunk {
+        chunk_id: "doc.md_b1_c0".to_string(),
+        parent_id: Some("doc.md_b1".to_string()),
+        filename: "doc.md".to_string(),
+        vector_text: "SessionLedger secondary reference".to_string(),
+        context_payload: "SessionLedger secondary reference notes".to_string(),
+        metadata: "{}".to_string(),
+        vector: vec![0.2; 384],
+    };
+
+    let batch = ArrowBatchBuilder::build(vec![chunk_a, chunk_b], 384).unwrap();
+    let table = LanceStorage::write_batch(db, "adrs", batch).await.unwrap();
+    LanceStorage::build_fts_index(&table, "context_payload")
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn test_unified_normalized_score_contract() {
+    // Design Intent: ADR-009 & REQ-01 & REQ-02
+    // Verifies all modalities return "score" in [0.0, 1.0], never "distance", and sort descending
+    let temp_dir = TempTestDir::new("retrieval_score_contract");
+    let lancedb_dir = temp_dir.sub_dir("lancedb");
+    let db = lancedb::connect(&lancedb_dir.display().to_string())
+        .execute()
+        .await
+        .unwrap();
+
+    setup_score_contract_table(&db).await;
+
+    let engine = create_test_engine(&temp_dir);
+    let results = engine
+        .search("SessionLedger", 5, "fts")
+        .await
+        .expect("search must succeed");
+
+    assert!(!results.is_empty(), "Must return at least 1 match");
+
+    let mut previous_score = 1.0;
+    for result in &results {
+        // Assert distance key is forbidden
+        assert!(
+            result.get("distance").is_none(),
+            "Legacy 'distance' key must NOT exist in search response"
+        );
+
+        // Assert score exists and is bounded in [0.0, 1.0]
+        let score = result
+            .get("score")
+            .and_then(|v| v.as_f64())
+            .expect("Result must have a numeric 'score' field") as f32;
+
+        assert!(
+            (0.0..=1.0).contains(&score),
+            "Score must be normalized in [0.0, 1.0], got {}",
+            score
+        );
+
+        // Assert descending sort order
+        assert!(
+            score <= previous_score,
+            "Results must be sorted descending by score"
+        );
+        previous_score = score;
+    }
 }
