@@ -1,80 +1,109 @@
-# Compitent Architecture
+# Compiled Intent: System Architecture
 
-## System Overview
-Compitent is an **Episodic Memory Coprocessor** designed for local AI agents. It solves the "Memory Wall" and "Contextual Amnesia" problems by providing a zero-copy vector database that agents can query on-demand, rather than relying on static prompt stuffing.
+## 1. System Overview
 
-Because Compitent is strictly a **System Domain** component (a persistent memory layer), its API and architecture must be completely domain-agnostic. It does not assume the outer layer is a blogging assistant or an architectural auditor. Instead, it provides flexible, low-level levers so the outer layers can construct their own business logic.
+**Compiled Intent** is an episodic memory coprocessor and architectural enforcement engine written in Rust. It solves the problems of **Contextual Amnesia** and **Context Poisoning** in AI coding workflows by replacing volatile prompt stuffing with deterministic, compiler-grade retrieval.
 
-Compitent operates in two primary modes:
-1.  **Offline Indexer:** Scans directories, parses documents into semantic chunks, generates vector embeddings, and stores them in a local LanceDB instance.
-2.  **Online Coprocessor (MCP):** Runs as a persistent `stdio` server using the Model Context Protocol (MCP). It exposes tools to any compatible AI IDE or Agent, allowing them to dynamically search the memory base.
+### The Two Domains
 
-## API Design Philosophy
+- **System Domain (Compiled Intent)**: A deterministic, headless Rust engine (`intent`) that maintains a synchronized Apache Arrow / LanceDB vector database of local project intent (ADRs, Specs, Architecture Guides). It is completely domain-agnostic.
+- **Business Domain (AI Agents & Merge Gates)**: Outer layers (Claude Desktop, Cursor, Antigravity, CI/CD pre-commit hooks) that query the engine via the **Model Context Protocol (MCP)** or CLI, evaluating code diffs against retrieved architectural constraints.
 
-The system API is built around six core capabilities designed to solve the inherent flaws of volatile LLM context windows:
+```mermaid
+flowchart TD
+    subgraph BusinessDomain ["Business Domain (Reasoning & Evaluation)"]
+        IDE["AI IDE (Claude / Cursor / Antigravity)"]
+        CI["Pre-Commit Interceptor / CI Gate"]
+    end
 
-### 1. Pluggable Chunking Strategies
-An ADR might need AST-level Markdown chunking, while a raw log file might need a sliding window. The API shouldn't force a single strategy.
-* **API Need:** When the outer layer sends a document to be indexed, it should be able to specify the chunking strategy (`strategy="ast"`, `strategy="sliding_window_200"`, etc.).
+    subgraph SystemDomain ["System Domain (Compiled Intent Engine)"]
+        CLI["CLI Router (intent)"]
+        MCP["MCP Server (JSON-RPC 2.0 over Stdio)"]
+        Engine["Core Retrieval Engine"]
+        Indexer["AST Ingestion & Sync Pipeline"]
+        Storage["Embedded LanceDB + Tantivy FTS"]
+        Manifest["SHA-256 State Manifest"]
+    end
 
-### 2. Schema-Agnostic Metadata Handling
-The Engine shouldn't know what "tags," "series," or "draft" means. It should just know about "text," "vectors," and a generic JSON "metadata" blob.
-* **API Need:** The outer layer passes the raw markdown and a parsed JSON metadata payload. The Engine stores the JSON blindly.
-* **API Need:** The search API must allow the outer layer to pass pre-filters (e.g., `filter="metadata.draft == false AND metadata.year == 2024"`). LanceDB supports this natively; the API just needs to pass it through.
+    IDE <-->|Stdio JSON-RPC 2.0| MCP
+    CI <-->|Subcommand Execution| CLI
+    CLI --> Engine
+    CLI --> Indexer
+    MCP --> Engine
+    MCP --> Indexer
+    Indexer -->|Parse & Slice| AST["pulldown_cmark AST"]
+    Indexer -->|Content Hashing| Manifest
+    Indexer -->|Arrow RecordBatch| Storage
+    Engine -->|Hybrid RRF Query| Storage
+```
 
-### 3. Contextual Expansion (Parent-Child Retrieval)
-If the outer layer uses tiny 200-character chunks to get highly accurate search hits, the LLM will complain that the chunks lack surrounding context.
-* **API Need:** The API must expose a way to request surrounding context. For example, `get_chunk(id="chunk_123", expand_context=True)` which returns the target chunk plus the chunk before and after it, or the entire parent Markdown heading.
+---
 
-### 4. Search Modalities and Dial Tuning
-Different tasks require different retrieval math. Finding a conceptual idea ("How do teams work together?") requires Vector Search. Finding a specific function name (`SessionLedger`) requires Full-Text Search (FTS).
-* **API Need:** The search endpoint must accept parameters for `mode="vector" | "fts" | "hybrid"`.
-* **API Need:** The outer layer should be able to tune the dials (e.g., `limit=5`, or adjusting the Reciprocal Rank Fusion weights for hybrid search).
+## 2. Core Architectural Pillars
 
-### 5. Namespaces / Table Isolation
-A user might want to index their Blog, their ADRs, and their personal journal on the same machine.
-* **API Need:** The API must accept a namespace or collection parameter (e.g., `index_document(file, namespace="blog")`) so that the LanceDB tables remain isolated.
+### 2.1 Intra-Document Attention Firewall (AST Heading Chunking)
 
-### 6. The Cache Invalidation Endpoint
-The outer layer needs to know if the memory is stale, and it needs a way to force an update.
-* **API Need:** A `sync(directory, namespace)` endpoint that performs the differential hashing, or an `update_file(file_path)` endpoint so an IDE watcher can instantly push changes to the Engine the moment a file is saved.
+- Technical documents have strict semantic hierarchies.
+- The engine parses Markdown using `pulldown_cmark`, using headings (`#`, `##`) as authoritative **Parent Block** boundaries.
+- Slices dense child chunks ($\le 300$ characters) strictly *within* heading boundaries.
+- Matches resolve back to full parent sections (`context_payload`), completely eliminating pronoun ambiguity while preventing intra-document attention bleed.
 
-## Core Modules
+### 2.2 Inter-Document Attention Firewall (Directory Namespaces)
 
-To maintain a clean separation of concerns, the Rust codebase is divided into four distinct modules:
+- Configured in `.intent/config.toml` (e.g. `adrs = "docs/adrs"`, `specs = "docs/specs"`).
+- Slices from each directory inherit an exact `namespace` column in the unified LanceDB Arrow table.
+- Pre-commit audit gates restrict queries to `namespace = "adrs"` to mathematically prevent descriptive specs from polluting normative architectural audits.
 
-### 1. `config` (Configuration & Orchestration)
-Handles loading settings from `intent.toml` (or environment variables) and parsing CLI arguments. 
-*   **Responsibilities:** Defines indexing paths, chunking parameters, and embedding model endpoints (e.g., local `llama.cpp` server URLs).
+### 2.3 Tri-Modal Hybrid Search & Reciprocal Rank Fusion (RRF)
 
-### 2. `indexer` (Parsing & Vectorization)
-The ingestion engine of Compitent.
-*   **Responsibilities:** 
-    *   Reads files from disk.
-    *   Applies language-specific chunking strategies (e.g., Markdown header-based chunking).
-    *   Separates structural metadata (titles, headers) from semantic payloads.
-    *   Calls the embedding model API to generate vectors.
-    *   Constructs Apache Arrow `RecordBatch` structures and persists them to LanceDB.
+- Dense vector search fails on exact code symbols (`SessionLedger`, `CompitentError`); lexical search fails on abstract conceptual rules.
+- LanceDB executes concurrent vector cosine search and Tantivy BM25 scalar search, fusing rank positions using scale-invariant Reciprocal Rank Fusion ($k=60$).
 
-### 3. `engine` (The Core Logic & Retrieval)
-The agnostic brain of the system that bridges storage and search.
-*   **Responsibilities:** 
-    *   Executes vector similarity searches against the LanceDB `.lancedb` directory.
-    *   Formats the retrieved chunks into human/LLM readable context blocks.
-    *   *Constraint:* Must not contain any MCP-specific serialization logic.
+### 2.4 Differential State Synchronization
 
-### 4. `mcp` (The Transport Layer)
-The communication boundary between Compitent and the outside world.
-*   **Responsibilities:**
-    *   Speaks the JSON-RPC Model Context Protocol over `stdin`/`stdout`.
-    *   Registers the `recall` tool with connecting clients.
-    *   Parses incoming tool calls, passes the query string to the `engine`, and formats the response back into MCP JSON.
-    *   *Constraint:* Must redirect all internal logging to `stderr` to avoid corrupting the `stdout` JSON-RPC pipe.
+- Content-addressed SHA-256 manifest (`.intent/manifest.json`) detects modified, added, and deleted files.
+- Exits in <10ms when the cache is warm.
+- Scoped orphan purging ensures deleted files are evicted from LanceDB storage without cross-directory data loss.
 
-## Data Flow
+### 2.5 Stdio Wire Isolation
 
-### Indexing Flow
-`Markdown Document` → `Indexer (Header Chunker)` → `Llama.cpp Embedding API` → `Apache Arrow RecordBatch` → `LanceDB (.lancedb)`
+- When running as an MCP server daemon, `stdout` is reserved 100% for valid JSON-RPC 2.0 frames.
+- All telemetry, logging, and diagnostics are strictly emitted to `stderr`.
 
-### Retrieval Flow (MCP)
-`Agent Tool Call (recall)` → `MCP Server` → `Engine (Get Query Embedding)` → `LanceDB (Vector Search)` → `Engine (Format String)` → `MCP Server (Tool Response JSON)`
+---
+
+## 3. Module Hierarchy & Separation of Concerns
+
+The Rust codebase is partitioned into distinct submodules:
+
+```
+src/
+├── lib.rs              <-- Public library API and re-exports
+├── main.rs             <-- Unified canonical binary (intent)
+├── config/             <-- Configuration loading (config.toml) and CLI argument parsing
+├── engine/             <-- Core storage orchestration and hybrid search execution
+├── indexer/            <-- Markdown AST chunking, Arrow RecordBatch building, and manifest sync
+│   ├── arrow_builder.rs
+│   ├── manifest.rs
+│   ├── markdown_chunker.rs
+│   └── storage.rs
+├── mcp/                <-- Headless JSON-RPC 2.0 protocol handling and tool dispatch
+│   ├── mod.rs
+│   └── tools.rs
+└── telemetry.rs        <-- Stderr-isolated tracing subscriber initialization
+```
+
+### Separation Invariants
+
+1. **The Indexer MUST NOT know about MCP**.
+2. **The MCP layer MUST NOT directly access LanceDB or filesystem tables**; it must route all calls through the core `engine` or `indexer`.
+3. **The Core Engine exposes pure Rust data structures** independent of JSON-RPC or CLI representations.
+
+---
+
+## 4. Documentation Architecture
+
+The `docs/` directory follows the industry standard separating **Contracts (WHAT)** from **Decisions (WHY)**:
+
+- [docs/specs/](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/specs): Living functional specifications defining schemas, CLI flags, protocols, and invariants.
+- [docs/adrs/](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs): Immutable chronological decision records evaluating competing options, trade-offs, and consequences.

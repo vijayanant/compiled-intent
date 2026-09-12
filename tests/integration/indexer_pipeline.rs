@@ -4,18 +4,19 @@
 //! Markdown AST chunking -> Arrow `RecordBatch` -> LanceDB storage -> FTS Index -> Delta Sync -> Orphan Purge.
 //!
 //! Design Intent References:
-//! - ADR-003: Markdown-Aware Chunking Strategy
-//! - ADR-004: Parent-Child Chunking (Small-to-Big Retrieval)
-//! - ADR-006: Differential Sync and Cache Invalidation
+//! - ADR-002: Markdown AST Parsing and Small-to-Big Retrieval Strategy
+//! - ADR-004: Differential State Manifest and Scoped Orphan Purging
+//! - REQ-03: AST Chunking
+//! - REQ-04: Sync Lifecycle
 
 use super::common::TempTestDir;
 use compiled_intent::indexer::{
     chunk_markdown, ArrowBatchBuilder, IndexChunk, LanceStorage, Manifest,
 };
 
-#[test]
-fn test_ast_chunking_with_sliding_window_integrity() {
-    // Design Intent: ADR-003 (AST boundaries) & ADR-004 (Small-to-big parent payload)
+#[tokio::test]
+async fn test_ast_chunking_with_sliding_window_integrity() {
+    // Design Intent: ADR-002 (AST boundaries & small-to-big parent payload)
     let markdown = r#"
 # Heading One
 
@@ -60,7 +61,7 @@ Short sub-section content.
 
 #[tokio::test]
 async fn test_arrow_batch_schema_conformance() {
-    // Design Intent: ADR-005 (Relational Arrow schema with scalar & vector columns)
+    // Design Intent: ADR-001 (Embedded Arrow schema with scalar & vector columns)
     let chunks = vec![
         IndexChunk {
             chunk_id: "doc.md_b0_c0".to_string(),
@@ -104,7 +105,7 @@ async fn test_arrow_batch_schema_conformance() {
 
 #[tokio::test]
 async fn test_differential_sync_lifecycle_and_orphan_purge() {
-    // Design Intent: ADR-006 (Differential Sync and Cache Invalidation)
+    // Design Intent: ADR-004 (Differential Sync and Cache Invalidation)
     let temp_dir = TempTestDir::new("indexer_sync");
     let adrs_dir = temp_dir.sub_dir("specs");
 
@@ -200,7 +201,7 @@ async fn assert_orphan_purge_in_storage(temp_dir: &TempTestDir, orphan_file: &st
 
 #[tokio::test]
 async fn test_multi_directory_scoping_for_orphan_detection() {
-    // Design Intent: ADR-006 (Orphan detection must be scoped to scanned directories)
+    // Design Intent: ADR-004 (Orphan detection must be scoped to scanned directories)
     let temp_dir = TempTestDir::new("multi_dir_sync");
     let dir_a = temp_dir.sub_dir("agents_adrs");
     let _dir_b = temp_dir.sub_dir("docs_adrs");

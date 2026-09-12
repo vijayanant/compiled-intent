@@ -1,31 +1,20 @@
-# Intent Engine: Requirements Index
+# Compiled Intent: System Specification Index
 
-This directory contains the detailed engineering specifications for the Intent Engine (compiled-intent). These specifications are designed to be testable, verifiable, and implementable by both human developers and autonomous AI agents.
+## 1. Overview
 
-## Specification Documents
+Compiled Intent is a high-performance, system-level context engine written in Rust. It serves as a universal semantic memory layer and architectural coprocessor for AI coding assistants and CI/CD merge gates.
 
-1. **[01-REQ-MCP-INTERFACE.md](./01-REQ-MCP-INTERFACE.md)**
-   - Covers the Model Context Protocol (MCP) server requirements.
-   - Defines exact JSON-RPC schemas for tools (`recall`, `get_context`, `index_directory`) and resources.
-   - *Note: Incorporates the mandate from ADR-001 to standardize on the `recall` tool name.*
+This directory contains the **living functional specifications** defining the public contracts, interfaces, data formats, and behavioral invariants of the engine.
 
-2. **[02-REQ-STORAGE-CHUNKING.md](./02-REQ-STORAGE-CHUNKING.md)**
-   - Covers the LanceDB and Apache Arrow schema definitions.
-   - Defines the exact AST-based markdown chunking rules and YAML frontmatter extraction logic.
+## 2. Specification Map & Architecture Traceability
 
-3. **[03-REQ-SYNC-LIFECYCLE.md](./03-REQ-SYNC-LIFECYCLE.md)**
-   - Covers the differential sync engine requirements (`.manifest.json`).
-   - Details the exact hashing logic and the required procedure for handling deleted/orphaned files to prevent "phantom memory".
+Each specification defines the operational contract (**WHAT**) and links to its corresponding Architectural Decision Record (**WHY**):
 
-4. **[04-REQ-NAMESPACES-FILTERING.md](./04-REQ-NAMESPACES-FILTERING.md)**
-   - Covers the transition from a monolithic hardcoded database to isolated, multi-tenant LanceDB tables (Namespaces).
-   - Details the SQL pushdown logic for metadata filtering.
-
-5. **[05-REQ-SYSTEM-CONFIG.md](./05-REQ-SYSTEM-CONFIG.md)**
-   - Covers existing configuration parsing (`EngineConfig`), telemetry (`tracing`), and the `clap`-based CLI wrapper for manual testing.
-
-6. **[06-REQ-BACKGROUND-SYNC.md](./06-REQ-BACKGROUND-SYNC.md)**
-   - Covers the future implementation of the `notify` file system watcher for ambient, debounce-protected memory updates.
-
-7. **[07-REQ-ADVANCED-CHUNKING.md](./07-REQ-ADVANCED-CHUNKING.md)**
-   - Fulfills the `chunking_strategy` enum parameter by detailing the requirements for the fallback Sliding Window chunking algorithm.
+| Specification | Scope & Contract | Authoritative ADR Rationale |
+| :--- | :--- | :--- |
+| [01-REQ-MCP-INTERFACE](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/specs/01-REQ-MCP-INTERFACE.md) | JSON-RPC 2.0 wire protocol, Stdio I/O isolation, tool definitions (`search`, `get_context`, `index_directory`), and error code mapping. | [ADR-005: Headless Stdio MCP Protocol](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs/005-headless-stdio-mcp-protocol.md) |
+| [02-REQ-STORAGE-AND-RETRIEVAL](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/specs/02-REQ-STORAGE-AND-RETRIEVAL.md) | 7-column Apache Arrow RecordBatch schema, 384/768-D vector indexing, Tantivy scalar FTS, and Reciprocal Rank Fusion (RRF). | [ADR-001: Embedded Vector Storage](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs/001-embedded-vector-storage.md)<br/>[ADR-003: Tri-Modal Search & RRF](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs/003-tri-modal-search-and-rrf.md) |
+| [03-REQ-AST-CHUNKING](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/specs/03-REQ-AST-CHUNKING.md) | Markdown AST heading parsing via `pulldown_cmark`, 300-char dense child windows (50 overlap), and parent payload context return. | [ADR-002: Markdown AST Parsing & Small-to-Big Retrieval](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs/002-ast-guided-parent-chunking.md) |
+| [04-REQ-SYNC-LIFECYCLE](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/specs/04-REQ-SYNC-LIFECYCLE.md) | Content-addressed SHA-256 manifest, 5-stage sync lifecycle, and scoped orphan vector invalidation. | [ADR-004: Differential State Manifest & Scoped Invalidation](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs/004-differential-manifest-sync.md) |
+| [05-REQ-CLI-AND-CONFIG](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/specs/05-REQ-CLI-AND-CONFIG.md) | Canonical `intent` binary CLI subcommands (`serve`, `index`, `search`), `--config` precedence, and TOML schema. | [ADR-006: Unified Binary Architecture](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs/006-unified-binary-architecture.md) |
+| [06-REQ-NAMESPACES](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/specs/06-REQ-NAMESPACES.md) | Directory-based namespace mapping, unified Arrow column tagging, and DataFusion SQL pushdown filtering. | [ADR-007: Directory-Based Namespaces & Attention Isolation](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs/007-directory-namespaces-inter-document-firewall.md) |

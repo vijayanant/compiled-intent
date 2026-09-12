@@ -4,8 +4,9 @@
 //! and stdio isolation.
 //!
 //! Design Intent References:
-//! - ADR-001: Modular Architecture and MCP Protocol Isolation
-//! - ADR-002: MCP I/O Separation (Stdout vs Stderr)
+//! - ADR-005: Headless Stdio MCP Protocol and I/O Isolation
+//! - ADR-006: Unified Binary Architecture and CLI Topology
+//! - REQ-01: MCP Interface
 
 use super::common::{create_test_engine, TempTestDir};
 use compiled_intent::mcp::McpServer;
@@ -13,7 +14,7 @@ use serde_json::{json, Value};
 
 #[tokio::test]
 async fn test_mcp_initialize_handshake() {
-    // Design Intent: ADR-001 & ADR-002
+    // Design Intent: ADR-005 & ADR-006
     let temp_dir = TempTestDir::new("mcp_init");
     let engine = create_test_engine(&temp_dir);
     let server = McpServer::new(engine);
@@ -48,7 +49,7 @@ async fn test_mcp_initialize_handshake() {
 
 #[tokio::test]
 async fn test_mcp_tools_list_schema() {
-    // Design Intent: ADR-001 (Tools list discovery)
+    // Design Intent: ADR-005 & REQ-01 (Tools list discovery)
     let temp_dir = TempTestDir::new("mcp_tools");
     let engine = create_test_engine(&temp_dir);
     let server = McpServer::new(engine);
@@ -77,7 +78,7 @@ async fn test_mcp_tools_list_schema() {
 
 #[tokio::test]
 async fn test_mcp_get_context_tool_call() {
-    // Design Intent: ADR-004 (Parent Context Expansion via MCP)
+    // Design Intent: ADR-002 & REQ-01 (Parent Context Expansion via MCP)
     let temp_dir = TempTestDir::new("mcp_ctx");
     let spec_path = temp_dir.write_file(
         "auth_spec.md",
@@ -111,7 +112,7 @@ async fn test_mcp_get_context_tool_call() {
 
 #[tokio::test]
 async fn test_mcp_error_conformance() {
-    // Design Intent: ADR-002 (Stdio separation & standard JSON-RPC 2.0 error codes)
+    // Design Intent: ADR-005 & REQ-01 (Stdio separation & standard JSON-RPC 2.0 error codes)
     let temp_dir = TempTestDir::new("mcp_err");
     let engine = create_test_engine(&temp_dir);
     let server = McpServer::new(engine);
@@ -147,7 +148,7 @@ async fn test_mcp_error_conformance() {
 
 #[tokio::test]
 async fn test_mcp_notification_emits_no_response() {
-    // Design Intent: ADR-002 (Notifications MUST NOT produce a response on stdout)
+    // Design Intent: ADR-005 & REQ-01 (Notifications MUST NOT produce a response on stdout)
     let temp_dir = TempTestDir::new("mcp_notif");
     let engine = create_test_engine(&temp_dir);
     let server = McpServer::new(engine);

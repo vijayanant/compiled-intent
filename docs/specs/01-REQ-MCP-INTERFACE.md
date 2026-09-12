@@ -1,79 +1,93 @@
-# 01-REQ-MCP-INTERFACE
+# 01-REQ-MCP-INTERFACE: Model Context Protocol (MCP) Contract
 
-## 1. Overview
+> [!NOTE] **Architectural Rationale**
+> For the technical evaluation of Stdio transport versus local HTTP/SSE daemons, see [ADR-005: Headless Stdio MCP Protocol and I/O Isolation](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs/005-headless-stdio-mcp-protocol.md).
 
-The Intent Engine MUST expose its capabilities via the Model Context Protocol (MCP). The transport layer MUST be JSON-RPC 2.0 over standard input and output (`stdio`).
+## 1. Transport & Wire Protocol
 
-*Per ADR-001, the system must dogfood its own directives. The search tool MUST be named `recall` to enforce semantic correctness.*
+The engine MUST expose a standard Model Context Protocol (MCP) server communicating over Standard Input/Output (`stdio`) using newline-delimited JSON-RPC 2.0 framing.
 
-## 2. Tool Registration (`tools/list`)
+### 1.1 Stdio Isolation Invariant
 
-The server MUST respond to `tools/list` with exactly three tools.
+- **Standard Output (`stdout`)**: Strictly reserved for valid, serialized JSON-RPC 2.0 response objects. Under no circumstances may application logic, third-party libraries, or diagnostic statements print to `stdout`.
+- **Standard Error (`stderr`)**: The exclusive channel for telemetry, diagnostics, and debugging. All `tracing` subscriber logs MUST write to `stderr`.
 
-### 2.1 `recall`
+## 2. Core RPC Methods
 
-**Description:** Performs semantic or hybrid search against indexed documents.
-**Input Schema:**
+### 2.1 `initialize`
 
-```json
-{
-  "type": "object",
-  "properties": {
-    "query": { "type": "string", "description": "The search term" },
-    "namespace": { "type": "string", "description": "Target LanceDB table/collection" },
-    "mode": { "type": "string", "enum": ["vector", "fts", "hybrid"], "default": "hybrid" },
-    "metadata_filter": { "type": "string", "description": "SQL filter for JSON metadata (e.g., status = 'accepted')" },
-    "limit": { "type": "integer", "default": 3 }
-  },
-  "required": ["query", "namespace"]
-}
-```
+- **Request**: `{ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": { ... } }`
+- **Response**:
 
-**Acceptance Criteria:**
+  ```json
+  {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "protocolVersion": "2024-11-05",
+      "capabilities": { "tools": {} },
+      "serverInfo": { "name": "intent", "version": "0.1.0" }
+    }
+  }
+  ```
 
-- **Given** an invalid namespace, **When** invoked, **Then** return an MCP Error (`-32602` Invalid Params) stating "Namespace not found".
-- **Given** a valid query, **When** invoked, **Then** invoke LanceDB search and return an array of `chunk_id`, `context`, and `distance`.
+### 2.2 `notifications/initialized`
 
-### 2.2 `get_context`
+- Client acknowledgement notification. The server MUST process this notification and emit **no response**.
 
-**Description:** Resolves a child chunk ID back to its parent context.
-**Input Schema:**
+### 2.3 `tools/list`
 
-```json
-{
-  "type": "object",
-  "properties": {
-    "chunk_id": { "type": "string" },
-    "expand_level": { "type": "string", "enum": ["parent", "document"] }
-  },
-  "required": ["chunk_id"]
-}
-```
+- Emits the catalog of supported MCP tools.
+- Output MUST conform to the MCP Tools Specification containing schemas for `search`, `get_context`, and `index_directory`.
 
-**Acceptance Criteria:**
+### 2.4 `tools/call`
 
-- **Given** a valid `chunk_id` (e.g., `file.md_b1_c2`), **When** invoked, **Then** return the `context_payload` of the parent chunk.
+- Dispatches tool invocations by name:
+  - If tool succeeds: returns `{ "content": [{ "type": "text", "text": "..." }] }`.
+  - If tool fails: returns JSON-RPC error code and descriptive message.
 
-### 2.3 `index_directory`
+## 3. Tool Specifications
 
-**Description:** Triggers a sync of a local directory into a LanceDB namespace.
-**Input Schema:**
+### 3.1 `search`
 
-```json
-{
-  "type": "object",
-  "properties": {
-    "directory_path": { "type": "string" },
-    "namespace": { "type": "string" }
-  },
-  "required": ["directory_path", "namespace"]
-}
-```
+Searches project documentation using vector, full-text, or hybrid retrieval.
 
-## 3. Resource Discovery (`resources/list`)
+- **Arguments**:
+  - `query` (string, required): The search stimulus or technical query.
+  - `limit` (integer, optional, default: `5`): Maximum parent chunks to return.
+  - `mode` (string, optional, enum: `["hybrid", "fts", "vector"]`, default: `"hybrid"`): Retrieval modality.
+  - `namespace` (string, optional): Target directory namespace filter (e.g. `"specs"`, `"adrs"`).
+- **Return Payload**:
+  Returns a serialized JSON array of chunk match objects:
+  ```json
+  [
+    {
+      "chunk_id": "docs/adrs/001.md_b0_c0",
+      "context": "Source: docs/adrs/001.md\nSection: Decision\n...",
+      "distance": 0.0
+    }
+  ]
+  ```
 
-**Description:** The server MUST dynamically expose available namespaces as resources so AI agents can discover them without guessing.
-**Acceptance Criteria:**
+### 3.2 `get_context`
 
-- **When** `resources/list` is called, **Then** the engine MUST query LanceDB for all table names (`db.table_names()`).
-- The response MUST format these as resources (e.g., `uri: "intent://namespace/{table_name}"`).
+Expands and retrieves the complete, raw parent file content associated with a chunk ID.
+
+- **Arguments**:
+  - `chunk_id` (string, required): The chunk identifier (e.g. `"docs/specs/01-mcp.md_b0_c0"`).
+
+### 3.3 `index_directory`
+
+Forces an on-demand differential indexing pass over a target directory.
+
+- **Arguments**:
+  - `directory_path` (string, required): Filesystem path to scan and index.
+
+## 4. Standard Error Codes
+
+| Code | Constant | Meaning |
+| :---: | :--- | :--- |
+| `-32700` | `PARSE_ERROR` | Malformed JSON received on `stdin`. |
+| `-32600` | `INVALID_REQUEST` | Missing or invalid `jsonrpc: "2.0"` field. |
+| `-32601` | `METHOD_NOT_FOUND` | Unrecognized method name or unknown tool name. |
+| `-32603` | `INTERNAL_ERROR` | Storage query error, embedding API failure, or filesystem I/O error. |
