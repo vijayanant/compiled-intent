@@ -1,7 +1,8 @@
 # 05-REQ-CLI-AND-CONFIG: Command-Line Interface and Configuration
 
 > [!NOTE] **Architectural Rationale**
-> For the decision to consolidate the CLI and MCP daemon into a single unified binary, see [ADR-006: Unified Binary Architecture and CLI Topology](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs/006-unified-binary-architecture.md).
+> - For the decision to consolidate the CLI and MCP daemon into a single unified binary, see [ADR-006: Unified Binary Architecture and CLI Topology](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs/006-unified-binary-architecture.md).
+> - For the decision to decouple embedding inference to an external local daemon (Ollama) rather than bundling model weights, see [ADR-008: Decoupled Local Embedding Provider Architecture](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs/008-decoupled-local-embedding-provider.md).
 
 ## 1. Canonical Binary Topology
 
