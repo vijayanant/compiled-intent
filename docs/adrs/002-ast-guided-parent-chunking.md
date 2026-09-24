@@ -47,4 +47,6 @@ By using `pulldown_cmark`, heading text is explicitly preserved and prepended to
 ## Consequences & Trade-offs
 
 - **Positive**: High vector precision from dense 300-char children; zero pronoun ambiguity in retrieved parent contexts; strict structural isolation between headings.
+- **Positive**: Parent Chunk Collapsing automatically deduplicates sibling child chunks that resolve to the same parent AST block (`parent_id`), eliminating sibling crowding in top-$k$ search windows and maximizing information diversity.
 - **Accepted Trade-off**: Documents with zero markdown headings fall back to a single default `"Document Root"` parent block.
+

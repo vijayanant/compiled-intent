@@ -64,3 +64,14 @@ All search modes MUST project and return JSON objects with a unified, normalized
 - Higher `score` strictly represents greater relevance.
 - The legacy `"distance"` key is prohibited.
 - Retrieved child matches resolve to their full parent AST `context_payload`, preventing isolated, ungrounded token fragments from reaching the evaluator.
+
+### 4.1 Parent Chunk Collapsing (Sibling Deduplication)
+
+To prevent sibling child chunks from the same parent section from crowding out distinct parent documents in the top-$k$ results:
+- **Candidate Over-fetching**: The search pipeline over-fetches candidate rows from LanceDB ($\max(k \times 4, 20)$).
+- **Monotonic Relevance Sort**: Raw candidates are sorted descending by their unified normalized `score`.
+- **Parent Collapsing Invariant**: Sibling child chunks sharing the same `parent_id` (or derived `<filename>_b<parent>` identity) MUST collapse into a single result entry, retaining the child needle with the highest similarity score.
+- **Top-$k$ Truncation**: Results are truncated to the requested `limit` of unique parent context payloads.
+
+This invariant guarantees that every slot in the top-$k$ window provides distinct, non-redundant contextual logic to the agent while eliminating redundant token consumption.
+

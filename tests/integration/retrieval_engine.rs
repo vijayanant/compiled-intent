@@ -244,3 +244,73 @@ async fn test_unified_normalized_score_contract() {
         previous_score = score;
     }
 }
+
+#[tokio::test]
+async fn test_parent_chunk_collapsing_deduplication() {
+    // Design Intent: ADR-002 & REQ-02
+    // Sibling child chunks sharing the same parent_id must collapse into the single
+    // highest-scoring hit, preventing sibling crowding in top-k retrieval.
+    let temp_dir = TempTestDir::new("retrieval_collapse");
+    let lancedb_dir = temp_dir.sub_dir("lancedb");
+    let db = lancedb::connect(&lancedb_dir.display().to_string())
+        .execute()
+        .await
+        .unwrap();
+
+    let chunk_a1 = IndexChunk {
+        chunk_id: "doc_a.md_b0_c0".to_string(),
+        parent_id: Some("doc_a.md_b0".to_string()),
+        filename: "doc_a.md".to_string(),
+        vector_text: "ArchitectureConstraint core rule".to_string(),
+        context_payload: "Source: doc_a.md\nSection: Architecture\n\nArchitectureConstraint rule 1".to_string(),
+        metadata: "{}".to_string(),
+        vector: vec![0.1; 384],
+    };
+    let chunk_a2 = IndexChunk {
+        chunk_id: "doc_a.md_b0_c1".to_string(),
+        parent_id: Some("doc_a.md_b0".to_string()),
+        filename: "doc_a.md".to_string(),
+        vector_text: "ArchitectureConstraint secondary elaboration".to_string(),
+        context_payload: "Source: doc_a.md\nSection: Architecture\n\nArchitectureConstraint rule 1".to_string(),
+        metadata: "{}".to_string(),
+        vector: vec![0.1; 384],
+    };
+    let chunk_b1 = IndexChunk {
+        chunk_id: "doc_b.md_b0_c0".to_string(),
+        parent_id: Some("doc_b.md_b0".to_string()),
+        filename: "doc_b.md".to_string(),
+        vector_text: "ArchitectureConstraint in another document".to_string(),
+        context_payload: "Source: doc_b.md\nSection: Governance\n\nArchitectureConstraint rule 2".to_string(),
+        metadata: "{}".to_string(),
+        vector: vec![0.2; 384],
+    };
+
+    let batch = ArrowBatchBuilder::build(vec![chunk_a1, chunk_a2, chunk_b1], 384).unwrap();
+    let table = LanceStorage::write_batch(&db, "adrs", batch).await.unwrap();
+    LanceStorage::build_fts_index(&table, "context_payload")
+        .await
+        .unwrap();
+
+    let engine = create_test_engine(&temp_dir);
+    let results = engine
+        .search("ArchitectureConstraint", 5, "fts")
+        .await
+        .expect("search must succeed");
+
+    // Must return exactly 2 distinct parent blocks, NOT 3
+    assert_eq!(
+        results.len(),
+        2,
+        "Sibling child chunks for doc_a.md_b0 must collapse into 1 parent result"
+    );
+
+    let returned_chunk_ids: Vec<&str> = results
+        .iter()
+        .filter_map(|r| r.get("chunk_id").and_then(|v| v.as_str()))
+        .collect();
+
+    // Verify both doc_a and doc_b are represented
+    assert!(returned_chunk_ids.iter().any(|id| id.starts_with("doc_a.md_b0")));
+    assert!(returned_chunk_ids.iter().any(|id| id.starts_with("doc_b.md_b0")));
+}
+
