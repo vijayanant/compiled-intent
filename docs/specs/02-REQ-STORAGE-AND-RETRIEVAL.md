@@ -75,3 +75,14 @@ To prevent sibling child chunks from the same parent section from crowding out d
 
 This invariant guarantees that every slot in the top-$k$ window provides distinct, non-redundant contextual logic to the agent while eliminating redundant token consumption.
 
+### 4.2 Adaptive Retrieval Windows (Score Tolerance Gating)
+
+To eliminate the "Precipice Problem" and prevent marginal or distractor chunks from diluting the LLM's attention budget during developer workflows:
+- **Absolute Floor ($S_{\text{floor}}$)**: If configured via `min_score`, any candidate whose normalized relevance score $S < S_{\text{floor}}$ is pruned. If the top match fails this floor, 0 chunks are returned to prevent false-positive prompt pollution on generic queries.
+- **Score Tolerance ($\tau \in [0.0, 1.0]$)**: If configured via `score_tolerance`, candidates whose score falls more than fraction $\tau$ below the top score are pruned (i.e. $S < (1.0 - \tau) \cdot S_{\text{top}}$). For example, `score_tolerance = 0.15` retains matches within 15% of the top-ranked hit.
+- **Compound Gating Invariant**: A candidate chunk $i$ is retained if and only if:
+  $$S_i \ge \max\left(S_{\text{floor}},\, (1.0 - \tau) \cdot S_{\text{top}}\right)$$
+- When neither threshold is specified, the engine returns the standard top-$k$ parent results, preserving fixed-window IR benchmark comparability.
+
+
+

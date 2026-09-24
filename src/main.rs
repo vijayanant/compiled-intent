@@ -33,6 +33,12 @@ pub enum Commands {
         /// Maximum number of results to return
         #[arg(long, default_value_t = 3)]
         limit: usize,
+        /// Minimum normalized confidence score floor in [0.0, 1.0]
+        #[arg(long)]
+        min_score: Option<f32>,
+        /// Relative score tolerance in [0.0, 1.0] (e.g. 0.15 = prune if score < (1.0 - 0.15) * top_score)
+        #[arg(long)]
+        score_tolerance: Option<f32>,
     },
     /// Start the Model Context Protocol (MCP) server on stdio (default)
     Serve,
@@ -52,9 +58,21 @@ async fn main() -> anyhow::Result<()> {
             compiled_intent::indexer::index_adrs(&engine, &[path]).await?;
             tracing::info!("Indexing complete!");
         }
-        Some(Commands::Search { query, mode, limit }) => {
+        Some(Commands::Search {
+            query,
+            mode,
+            limit,
+            min_score,
+            score_tolerance,
+        }) => {
             tracing::info!("Searching for: {} (Mode: {})", query, mode);
-            let results = engine.search(query, *limit, mode).await?;
+            let filters = compiled_intent::engine::SearchFilterOptions {
+                min_score: *min_score,
+                score_tolerance: *score_tolerance,
+            };
+            let results = engine
+                .search_with_options(query, *limit, mode, filters)
+                .await?;
             println!("{}", serde_json::to_string_pretty(&results)?);
         }
         Some(Commands::Serve) | None => {
@@ -98,6 +116,8 @@ mod tests {
                 query: "architecture query".to_string(),
                 mode: "hybrid".to_string(),
                 limit: 3,
+                min_score: None,
+                score_tolerance: None,
             })
         );
     }
@@ -112,6 +132,10 @@ mod tests {
             "fts",
             "--limit",
             "10",
+            "--min-score",
+            "0.5",
+            "--score-tolerance",
+            "0.15",
         ])
         .unwrap();
         assert_eq!(
@@ -120,6 +144,8 @@ mod tests {
                 query: "SessionLedger".to_string(),
                 mode: "fts".to_string(),
                 limit: 10,
+                min_score: Some(0.5),
+                score_tolerance: Some(0.15),
             })
         );
     }

@@ -314,3 +314,81 @@ async fn test_parent_chunk_collapsing_deduplication() {
     assert!(returned_chunk_ids.iter().any(|id| id.starts_with("doc_b.md_b0")));
 }
 
+#[tokio::test]
+async fn test_adaptive_retrieval_window_gating() {
+    // Design Intent: Section 35 (Relative-Drop Gating & Absolute Floor)
+    // Verifies that min_score and relative_drop dynamically prune marginal chunks.
+    let temp_dir = TempTestDir::new("retrieval_adaptive");
+    let lancedb_dir = temp_dir.sub_dir("lancedb");
+    let db = lancedb::connect(&lancedb_dir.display().to_string())
+        .execute()
+        .await
+        .unwrap();
+
+    let chunk_a = IndexChunk {
+        chunk_id: "high.md_b0_c0".to_string(),
+        parent_id: Some("high.md_b0".to_string()),
+        filename: "high.md".to_string(),
+        vector_text: "TargetSymbol Primary High Match".to_string(),
+        context_payload: "TargetSymbol TargetSymbol TargetSymbol primary high match content".to_string(),
+        metadata: "{}".to_string(),
+        vector: vec![0.1; 384],
+    };
+    let chunk_b = IndexChunk {
+        chunk_id: "low.md_b0_c0".to_string(),
+        parent_id: Some("low.md_b0".to_string()),
+        filename: "low.md".to_string(),
+        vector_text: "TargetSymbol weak reference".to_string(),
+        context_payload: "Weak peripheral reference mentioning TargetSymbol only once in passing".to_string(),
+        metadata: "{}".to_string(),
+        vector: vec![0.5; 384],
+    };
+
+    let batch = ArrowBatchBuilder::build(vec![chunk_a, chunk_b], 384).unwrap();
+    let table = LanceStorage::write_batch(&db, "adrs", batch).await.unwrap();
+    LanceStorage::build_fts_index(&table, "context_payload")
+        .await
+        .unwrap();
+
+    let engine = create_test_engine(&temp_dir);
+
+    // 1. Without filters, both matches are returned
+    let unfiltered = engine
+        .search("TargetSymbol", 5, "fts")
+        .await
+        .expect("search must succeed");
+    assert_eq!(unfiltered.len(), 2, "Unfiltered search returns both hits");
+
+    // 2. With strict score_tolerance = 0.05 (must be within 5% of top score): lower match is pruned
+    let adaptive_results = engine
+        .search_with_options(
+            "TargetSymbol",
+            5,
+            "fts",
+            compiled_intent::engine::SearchFilterOptions {
+                min_score: None,
+                score_tolerance: Some(0.05),
+            },
+        )
+        .await
+        .expect("adaptive search must succeed");
+    assert_eq!(adaptive_results.len(), 1, "Score tolerance must prune marginal second hit");
+    assert_eq!(adaptive_results[0]["chunk_id"], "high.md_b0_c0");
+
+    // 3. With impossible floor = 0.99: 0 results returned cleanly
+    let floor_results = engine
+        .search_with_options(
+            "TargetSymbol",
+            5,
+            "fts",
+            compiled_intent::engine::SearchFilterOptions {
+                min_score: Some(0.99),
+                score_tolerance: None,
+            },
+        )
+        .await
+        .expect("floor search must succeed");
+    assert_eq!(floor_results.len(), 0, "High floor must yield 0 results without error");
+}
+
+

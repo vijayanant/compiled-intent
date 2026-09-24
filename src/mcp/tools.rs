@@ -18,7 +18,9 @@ pub fn tool_definitions() -> Value {
                         "namespace": { "type": "string", "description": "Target LanceDB collection" },
                         "mode": { "type": "string", "enum": ["vector", "fts", "hybrid"] },
                         "metadata_filter": { "type": "string", "description": "SQL filter for JSON metadata" },
-                        "limit": { "type": "integer" }
+                        "limit": { "type": "integer" },
+                        "min_score": { "type": "number", "description": "Minimum normalized confidence score floor in [0.0, 1.0]" },
+                        "score_tolerance": { "type": "number", "description": "Relative score tolerance in [0.0, 1.0] (prunes results scoring below (1.0 - score_tolerance) * top_score)" }
                     },
                     "required": ["query"]
                 }
@@ -64,14 +66,24 @@ async fn handle_search(engine: &CompitentEngine, args: &Value) -> Result<Value, 
         .and_then(|m| m.as_str())
         .unwrap_or("vector");
 
+    let min_score = args.get("min_score").and_then(|v| v.as_f64()).map(|f| f as f32);
+    let score_tolerance = args.get("score_tolerance").and_then(|v| v.as_f64()).map(|f| f as f32);
+
     tracing::info!(
-        "LLM invoked 'search' in {} mode with query: {}",
+        "LLM invoked 'search' in {} mode with query: {} (min_score: {:?}, score_tolerance: {:?})",
         mode,
-        query
+        query,
+        min_score,
+        score_tolerance
     );
 
+    let filters = crate::engine::SearchFilterOptions {
+        min_score,
+        score_tolerance,
+    };
+
     engine
-        .search(query, limit, mode)
+        .search_with_options(query, limit, mode, filters)
         .await
         .map(|results| {
             json!({
