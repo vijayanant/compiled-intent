@@ -148,8 +148,8 @@ impl CompitentEngine {
 pub struct SearchFilterOptions {
     /// Absolute confidence floor in [0.0, 1.0]. Drops any chunk scoring below this threshold.
     pub min_score: Option<f32>,
-    /// Relative score tolerance in [0.0, 1.0]. Prunes any chunk scoring below (1.0 - score_tolerance) * top_score.
-    /// For example, score_tolerance = 0.15 retains matches within 15% of the top score.
+    /// Relative score tolerance in [0.0, 1.0]. Prunes any chunk scoring below (1.0 - `score_tolerance`) * `top_score`.
+    /// For example, `score_tolerance` = 0.15 retains matches within 15% of the top score.
     pub score_tolerance: Option<f32>,
 }
 
@@ -180,7 +180,7 @@ fn compute_fetch_limit(limit: usize) -> usize {
     std::cmp::max(limit.saturating_mul(OVER_FETCH_MULTIPLIER), MIN_FETCH_LIMIT)
 }
 
-/// Collapses sibling child chunks by parent_id, strictly preserving the engine stream ranking order,
+/// Collapses sibling child chunks by `parent_id`, strictly preserving the engine stream ranking order,
 /// and applies adaptive thresholding (absolute floor + score tolerance gating).
 fn collapse_parent_candidates(
     candidates: Vec<SearchCandidate>,
@@ -229,7 +229,7 @@ fn collapse_parent_candidates(
     results
 }
 
-/// Resolves the parent identifier from the Arrow column or falls back to chunk_id derivation.
+/// Resolves the parent identifier from the Arrow column or falls back to `chunk_id` derivation.
 fn resolve_parent_id(
     parent_id_col: Option<&arrow::array::StringArray>,
     row: usize,
@@ -237,24 +237,28 @@ fn resolve_parent_id(
 ) -> String {
     parent_id_col
         .and_then(|col| (!col.is_null(row)).then(|| col.value(row).to_string()))
-        .or_else(|| {
-            chunk_id.rsplit_once("_c").map(|(p, _)| p.to_string())
-        })
+        .or_else(|| chunk_id.rsplit_once("_c").map(|(p, _)| p.to_string()))
         .unwrap_or_else(|| chunk_id.to_string())
 }
+
+/// ADR-009 Reciprocal Rank Fusion theoretical maximum constant.
+/// Max RRF is achieved when a candidate is ranked #1 in both Vector and FTS: 1/(60+1) + 1/(60+1) = 2/61.
+const RRF_MAX: f32 = 2.0 / 61.0;
 
 fn compute_normalized_score(
     raw_score: Option<f32>,
     raw_distance: Option<f32>,
+    raw_relevance: Option<f32>,
     mode: &str,
 ) -> Option<f32> {
     match mode {
         "fts" => raw_score.map(|s| (s / (s + 10.0)).clamp(0.0, 1.0)),
         "vector" => raw_distance.map(|d| (1.0 - d).clamp(0.0, 1.0)),
         _ => {
-            if let Some(s) = raw_score {
-                let norm = if s > 1.0 { s / (s + 10.0) } else { s };
-                Some(norm.clamp(0.0, 1.0))
+            if let Some(rrf) = raw_relevance {
+                Some((rrf / RRF_MAX).clamp(0.0, 1.0))
+            } else if let Some(s) = raw_score {
+                Some((s / (s + 10.0)).clamp(0.0, 1.0))
             } else {
                 raw_distance.map(|d| (1.0 - d).clamp(0.0, 1.0))
             }
@@ -272,6 +276,9 @@ fn extract_batch_results(batch: &arrow::array::RecordBatch, mode: &str) -> Vec<S
     let parent_id_col = batch
         .column_by_name("parent_id")
         .and_then(|c| c.as_any().downcast_ref::<arrow::array::StringArray>());
+    let relevance_col = batch
+        .column_by_name("_relevance_score")
+        .and_then(|c| c.as_any().downcast_ref::<arrow::array::Float32Array>());
     let score_col = batch
         .column_by_name("_score")
         .and_then(|c| c.as_any().downcast_ref::<arrow::array::Float32Array>());
@@ -285,6 +292,7 @@ fn extract_batch_results(batch: &arrow::array::RecordBatch, mode: &str) -> Vec<S
             let chunk_id = chunk_ids.value(i).to_string();
             let parent_id = resolve_parent_id(parent_id_col, i, &chunk_id);
 
+            let rrf = relevance_col.and_then(|c| (!c.is_null(i)).then(|| c.value(i)));
             let s = score_col.and_then(|c| (!c.is_null(i)).then(|| c.value(i)));
             let d = distance_col.and_then(|c| (!c.is_null(i)).then(|| c.value(i)));
 
@@ -292,7 +300,7 @@ fn extract_batch_results(batch: &arrow::array::RecordBatch, mode: &str) -> Vec<S
                 chunk_id,
                 parent_id,
                 context: contexts.value(i).to_string(),
-                score: compute_normalized_score(s, d, mode),
+                score: compute_normalized_score(s, d, rrf, mode),
             });
         }
     }
@@ -434,6 +442,29 @@ mod tests {
             },
         );
         assert_eq!(empty_filtered.len(), 0);
+    }
+
+    #[test]
+    fn test_compute_normalized_score_modalities() {
+        // Hybrid modality (ADR-009 Reciprocal Rank Fusion normalization)
+        let max_rrf = 2.0 / 61.0;
+        let score_perfect = compute_normalized_score(None, None, Some(max_rrf), "hybrid");
+        assert_eq!(score_perfect, Some(1.0));
+
+        let half_rrf = 1.0 / 61.0;
+        let score_single_pass =
+            compute_normalized_score(None, None, Some(half_rrf), "hybrid").unwrap();
+        assert!((score_single_pass - 0.5).abs() < 1e-5);
+
+        // FTS modality (BM25 saturation)
+        let score_fts_10 = compute_normalized_score(Some(10.0), None, None, "fts").unwrap();
+        assert!((score_fts_10 - 0.5).abs() < 1e-5);
+
+        // Vector modality (Cosine distance inversion)
+        let score_vec_zero_dist = compute_normalized_score(None, Some(0.0), None, "vector");
+        assert_eq!(score_vec_zero_dist, Some(1.0));
+        let score_vec_dist_02 = compute_normalized_score(None, Some(0.2), None, "vector").unwrap();
+        assert!((score_vec_dist_02 - 0.8).abs() < 1e-5);
     }
 
     #[test]

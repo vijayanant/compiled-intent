@@ -66,8 +66,14 @@ async fn handle_search(engine: &CompitentEngine, args: &Value) -> Result<Value, 
         .and_then(|m| m.as_str())
         .unwrap_or("vector");
 
-    let min_score = args.get("min_score").and_then(|v| v.as_f64()).map(|f| f as f32);
-    let score_tolerance = args.get("score_tolerance").and_then(|v| v.as_f64()).map(|f| f as f32);
+    let min_score = args
+        .get("min_score")
+        .and_then(|v| v.as_f64())
+        .map(|f| f as f32);
+    let score_tolerance = args
+        .get("score_tolerance")
+        .and_then(|v| v.as_f64())
+        .map(|f| f as f32);
 
     tracing::info!(
         "LLM invoked 'search' in {} mode with query: {} (min_score: {:?}, score_tolerance: {:?})",

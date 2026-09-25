@@ -69,7 +69,7 @@ All search modes MUST project and return JSON objects with a unified, normalized
 
 To prevent sibling child chunks from the same parent section from crowding out distinct parent documents in the top-$k$ results:
 - **Candidate Over-fetching**: The search pipeline over-fetches candidate rows from LanceDB ($\max(k \times 4, 20)$).
-- **Monotonic Relevance Sort**: Raw candidates are sorted descending by their unified normalized `score`.
+- **Stream Preservation**: Candidates stream natively from LanceDB in authoritative rank order (RRF fused order for hybrid, BM25 for FTS, vector distance for vector), guaranteeing optimal multi-modal fusion.
 - **Parent Collapsing Invariant**: Sibling child chunks sharing the same `parent_id` (or derived `<filename>_b<parent>` identity) MUST collapse into a single result entry, retaining the child needle with the highest similarity score.
 - **Top-$k$ Truncation**: Results are truncated to the requested `limit` of unique parent context payloads.
 

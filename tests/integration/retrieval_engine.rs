@@ -245,6 +245,45 @@ async fn test_unified_normalized_score_contract() {
     }
 }
 
+async fn setup_collapsing_test_table(db: &lancedb::Connection) {
+    let chunk_a1 = IndexChunk {
+        chunk_id: "doc_a.md_b0_c0".to_string(),
+        parent_id: Some("doc_a.md_b0".to_string()),
+        filename: "doc_a.md".to_string(),
+        vector_text: "ArchitectureConstraint core rule".to_string(),
+        context_payload: "Source: doc_a.md\nSection: Architecture\n\nArchitectureConstraint rule 1"
+            .to_string(),
+        metadata: "{}".to_string(),
+        vector: vec![0.1; 384],
+    };
+    let chunk_a2 = IndexChunk {
+        chunk_id: "doc_a.md_b0_c1".to_string(),
+        parent_id: Some("doc_a.md_b0".to_string()),
+        filename: "doc_a.md".to_string(),
+        vector_text: "ArchitectureConstraint secondary elaboration".to_string(),
+        context_payload: "Source: doc_a.md\nSection: Architecture\n\nArchitectureConstraint rule 1"
+            .to_string(),
+        metadata: "{}".to_string(),
+        vector: vec![0.1; 384],
+    };
+    let chunk_b1 = IndexChunk {
+        chunk_id: "doc_b.md_b0_c0".to_string(),
+        parent_id: Some("doc_b.md_b0".to_string()),
+        filename: "doc_b.md".to_string(),
+        vector_text: "ArchitectureConstraint in another document".to_string(),
+        context_payload: "Source: doc_b.md\nSection: Governance\n\nArchitectureConstraint rule 2"
+            .to_string(),
+        metadata: "{}".to_string(),
+        vector: vec![0.2; 384],
+    };
+
+    let batch = ArrowBatchBuilder::build(vec![chunk_a1, chunk_a2, chunk_b1], 384).unwrap();
+    let table = LanceStorage::write_batch(db, "adrs", batch).await.unwrap();
+    LanceStorage::build_fts_index(&table, "context_payload")
+        .await
+        .unwrap();
+}
+
 #[tokio::test]
 async fn test_parent_chunk_collapsing_deduplication() {
     // Design Intent: ADR-002 & REQ-02
@@ -257,39 +296,7 @@ async fn test_parent_chunk_collapsing_deduplication() {
         .await
         .unwrap();
 
-    let chunk_a1 = IndexChunk {
-        chunk_id: "doc_a.md_b0_c0".to_string(),
-        parent_id: Some("doc_a.md_b0".to_string()),
-        filename: "doc_a.md".to_string(),
-        vector_text: "ArchitectureConstraint core rule".to_string(),
-        context_payload: "Source: doc_a.md\nSection: Architecture\n\nArchitectureConstraint rule 1".to_string(),
-        metadata: "{}".to_string(),
-        vector: vec![0.1; 384],
-    };
-    let chunk_a2 = IndexChunk {
-        chunk_id: "doc_a.md_b0_c1".to_string(),
-        parent_id: Some("doc_a.md_b0".to_string()),
-        filename: "doc_a.md".to_string(),
-        vector_text: "ArchitectureConstraint secondary elaboration".to_string(),
-        context_payload: "Source: doc_a.md\nSection: Architecture\n\nArchitectureConstraint rule 1".to_string(),
-        metadata: "{}".to_string(),
-        vector: vec![0.1; 384],
-    };
-    let chunk_b1 = IndexChunk {
-        chunk_id: "doc_b.md_b0_c0".to_string(),
-        parent_id: Some("doc_b.md_b0".to_string()),
-        filename: "doc_b.md".to_string(),
-        vector_text: "ArchitectureConstraint in another document".to_string(),
-        context_payload: "Source: doc_b.md\nSection: Governance\n\nArchitectureConstraint rule 2".to_string(),
-        metadata: "{}".to_string(),
-        vector: vec![0.2; 384],
-    };
-
-    let batch = ArrowBatchBuilder::build(vec![chunk_a1, chunk_a2, chunk_b1], 384).unwrap();
-    let table = LanceStorage::write_batch(&db, "adrs", batch).await.unwrap();
-    LanceStorage::build_fts_index(&table, "context_payload")
-        .await
-        .unwrap();
+    setup_collapsing_test_table(&db).await;
 
     let engine = create_test_engine(&temp_dir);
     let results = engine
@@ -310,8 +317,41 @@ async fn test_parent_chunk_collapsing_deduplication() {
         .collect();
 
     // Verify both doc_a and doc_b are represented
-    assert!(returned_chunk_ids.iter().any(|id| id.starts_with("doc_a.md_b0")));
-    assert!(returned_chunk_ids.iter().any(|id| id.starts_with("doc_b.md_b0")));
+    assert!(returned_chunk_ids
+        .iter()
+        .any(|id| id.starts_with("doc_a.md_b0")));
+    assert!(returned_chunk_ids
+        .iter()
+        .any(|id| id.starts_with("doc_b.md_b0")));
+}
+
+async fn setup_adaptive_test_table(db: &lancedb::Connection) {
+    let chunk_a = IndexChunk {
+        chunk_id: "high.md_b0_c0".to_string(),
+        parent_id: Some("high.md_b0".to_string()),
+        filename: "high.md".to_string(),
+        vector_text: "TargetSymbol Primary High Match".to_string(),
+        context_payload: "TargetSymbol TargetSymbol TargetSymbol primary high match content"
+            .to_string(),
+        metadata: "{}".to_string(),
+        vector: vec![0.1; 384],
+    };
+    let chunk_b = IndexChunk {
+        chunk_id: "low.md_b0_c0".to_string(),
+        parent_id: Some("low.md_b0".to_string()),
+        filename: "low.md".to_string(),
+        vector_text: "TargetSymbol weak reference".to_string(),
+        context_payload: "Weak peripheral reference mentioning TargetSymbol only once in passing"
+            .to_string(),
+        metadata: "{}".to_string(),
+        vector: vec![0.5; 384],
+    };
+
+    let batch = ArrowBatchBuilder::build(vec![chunk_a, chunk_b], 384).unwrap();
+    let table = LanceStorage::write_batch(db, "adrs", batch).await.unwrap();
+    LanceStorage::build_fts_index(&table, "context_payload")
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -325,30 +365,7 @@ async fn test_adaptive_retrieval_window_gating() {
         .await
         .unwrap();
 
-    let chunk_a = IndexChunk {
-        chunk_id: "high.md_b0_c0".to_string(),
-        parent_id: Some("high.md_b0".to_string()),
-        filename: "high.md".to_string(),
-        vector_text: "TargetSymbol Primary High Match".to_string(),
-        context_payload: "TargetSymbol TargetSymbol TargetSymbol primary high match content".to_string(),
-        metadata: "{}".to_string(),
-        vector: vec![0.1; 384],
-    };
-    let chunk_b = IndexChunk {
-        chunk_id: "low.md_b0_c0".to_string(),
-        parent_id: Some("low.md_b0".to_string()),
-        filename: "low.md".to_string(),
-        vector_text: "TargetSymbol weak reference".to_string(),
-        context_payload: "Weak peripheral reference mentioning TargetSymbol only once in passing".to_string(),
-        metadata: "{}".to_string(),
-        vector: vec![0.5; 384],
-    };
-
-    let batch = ArrowBatchBuilder::build(vec![chunk_a, chunk_b], 384).unwrap();
-    let table = LanceStorage::write_batch(&db, "adrs", batch).await.unwrap();
-    LanceStorage::build_fts_index(&table, "context_payload")
-        .await
-        .unwrap();
+    setup_adaptive_test_table(&db).await;
 
     let engine = create_test_engine(&temp_dir);
 
@@ -372,7 +389,11 @@ async fn test_adaptive_retrieval_window_gating() {
         )
         .await
         .expect("adaptive search must succeed");
-    assert_eq!(adaptive_results.len(), 1, "Score tolerance must prune marginal second hit");
+    assert_eq!(
+        adaptive_results.len(),
+        1,
+        "Score tolerance must prune marginal second hit"
+    );
     assert_eq!(adaptive_results[0]["chunk_id"], "high.md_b0_c0");
 
     // 3. With impossible floor = 0.99: 0 results returned cleanly
@@ -388,7 +409,9 @@ async fn test_adaptive_retrieval_window_gating() {
         )
         .await
         .expect("floor search must succeed");
-    assert_eq!(floor_results.len(), 0, "High floor must yield 0 results without error");
+    assert_eq!(
+        floor_results.len(),
+        0,
+        "High floor must yield 0 results without error"
+    );
 }
-
-

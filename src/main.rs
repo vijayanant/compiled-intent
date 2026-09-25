@@ -36,7 +36,7 @@ pub enum Commands {
         /// Minimum normalized confidence score floor in [0.0, 1.0]
         #[arg(long)]
         min_score: Option<f32>,
-        /// Relative score tolerance in [0.0, 1.0] (e.g. 0.15 = prune if score < (1.0 - 0.15) * top_score)
+        /// Relative score tolerance in [0.0, 1.0] (e.g. 0.15 = prune if score < (1.0 - 0.15) * `top_score`)
         #[arg(long)]
         score_tolerance: Option<f32>,
     },
