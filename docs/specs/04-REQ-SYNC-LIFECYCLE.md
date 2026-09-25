@@ -1,7 +1,7 @@
 # 04-REQ-SYNC-LIFECYCLE: Differential Sync and Cache Invalidation
 
 > [!NOTE] **Architectural Rationale**
-> For the design decision to use a content-addressed SHA-256 state manifest over Git-diff tracking, see [ADR-004: Differential State Manifest and Scoped Orphan Purging](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs/004-differential-manifest-sync.md).
+> For the design decision to use a content-addressed SHA-256 state manifest over Git-diff tracking, see [ADR-004: Differential State Manifest and Scoped Orphan Purging](../adrs/004-differential-manifest-sync.md).
 
 ## 1. State Manifest Specification
 

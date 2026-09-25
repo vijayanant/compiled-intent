@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Addresses [REQ-01: MCP Interface](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/specs/01-REQ-MCP-INTERFACE.md).
+Addresses [REQ-01: MCP Interface](../specs/01-REQ-MCP-INTERFACE.md).
 
 AI coding assistants (Claude Desktop, Cursor, Antigravity, VS Code Copilot) require real-time access to the local architectural memory layer. The communication protocol must be cross-platform, secure, instantaneous, and zero-configuration.
 

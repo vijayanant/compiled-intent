@@ -2,9 +2,9 @@
 
 > [!NOTE] **Architectural Rationale**
 >
-> - For storage engine trade-offs (LanceDB vs SQLite-VSS vs Qdrant), see [ADR-001: Embedded Vector Storage](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs/001-embedded-vector-storage.md).
-> - For hybrid search fusion rationale (RRF vs Convex Combination), see [ADR-003: Tri-Modal Retrieval and Reciprocal Rank Fusion](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs/003-tri-modal-search-and-rrf.md).
-> - For the unified normalized relevance score schema and formulas, see [ADR-009: Unified Normalized Relevance Score Architecture](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs/009-unified-normalized-relevance-score.md).
+> - For storage engine trade-offs (LanceDB vs SQLite-VSS vs Qdrant), see [ADR-001: Embedded Vector Storage](../adrs/001-embedded-vector-storage.md).
+> - For hybrid search fusion rationale (RRF vs Convex Combination), see [ADR-003: Tri-Modal Retrieval and Reciprocal Rank Fusion](../adrs/003-tri-modal-search-and-rrf.md).
+> - For the unified normalized relevance score schema and formulas, see [ADR-009: Unified Normalized Relevance Score Architecture](../adrs/009-unified-normalized-relevance-score.md).
 
 ## 1. Apache Arrow Columnar Storage Schema
 

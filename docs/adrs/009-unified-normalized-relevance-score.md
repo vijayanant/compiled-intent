@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Addresses [REQ-01: MCP Interface](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/specs/01-REQ-MCP-INTERFACE.md) and [REQ-02: Storage and Retrieval](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/specs/02-REQ-STORAGE-AND-RETRIEVAL.md).
+Addresses [REQ-01: MCP Interface](../specs/01-REQ-MCP-INTERFACE.md) and [REQ-02: Storage and Retrieval](../specs/02-REQ-STORAGE-AND-RETRIEVAL.md).
 
 Compiled Intent exposes three search execution modalities:
 1. `vector`: Dense embedding nearest-neighbor search.

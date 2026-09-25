@@ -1,8 +1,9 @@
 # 05-REQ-CLI-AND-CONFIG: Command-Line Interface and Configuration
 
 > [!NOTE] **Architectural Rationale**
-> - For the decision to consolidate the CLI and MCP daemon into a single unified binary, see [ADR-006: Unified Binary Architecture and CLI Topology](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs/006-unified-binary-architecture.md).
-> - For the decision to decouple embedding inference to an external local daemon (Ollama) rather than bundling model weights, see [ADR-008: Decoupled Local Embedding Provider Architecture](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs/008-decoupled-local-embedding-provider.md).
+> - For the decision to consolidate the CLI and MCP daemon into a single unified binary, see [ADR-006: Unified Binary Architecture and CLI Topology](../adrs/006-unified-binary-architecture.md).
+> - For the decision to decouple embedding inference to an external local daemon (Ollama) rather than bundling model weights, see [ADR-008: Decoupled Local Embedding Provider Architecture](../adrs/008-decoupled-local-embedding-provider.md).
+> - For the decision to provide a native Q&A subcommand (`intent ask`) with decoupled streaming generation, see [ADR-010: Document Q&A Subcommand](../adrs/010-doc-qa-subcommand.md).
 
 ## 1. Canonical Binary Topology
 
@@ -29,6 +30,20 @@ The software MUST be packaged as a single standalone executable named **`intent`
   - `--limit <N>` (default: `5`)
   - `--namespace <name>` (optional)
 
+#### `intent ask <question>`
+
+- Retrieves relevant documentation using adaptive hybrid search and queries a local or remote LLM to answer questions at the terminal.
+- Emits real-time streamed tokens to `stdout` followed by an attribution summary of consulted documents.
+- **Flags**:
+  - `--model <name>`: Target model identifier (default: from config `llm.model` or `gemma3:12b`).
+  - `--endpoint <url>`: Target HTTP completion endpoint (default: from config `llm.endpoint` or `http://localhost:11434/api/chat`).
+  - `--limit <N>`: Candidate over-fetch limit before parent collapsing (default: `10`).
+  - `--score-tolerance <tau>`: Relative drop cutoff percentage below top hit (default: `0.15`).
+  - `--min-score <s>`: Absolute relevance floor (default: `0.0`).
+  - `--namespace <name>`: Restrict retrieval to a specific directory namespace (optional).
+  - `--no-stream`: Disable real-time token streaming and emit the full response at completion.
+  - `--no-sources`: Omit the citation attribution footer.
+
 #### `intent serve`
 
 - Starts the headless Model Context Protocol (MCP) server daemon on `stdin`/`stdout`.
@@ -46,10 +61,16 @@ The configuration file format is TOML:
 lancedb_path = ".intent/lancedb"
 table_name = "adrs"
 
-# External Embedding Model
+# External Embedding Model (ADR-008)
 llama_endpoint = "http://localhost:11434/api/embeddings"
 embedding_model = "nomic-embed-text"
 embedding_dimensions = 768
+
+# LLM Generation for `intent ask` (ADR-010)
+[llm]
+endpoint = "http://localhost:11434/api/chat"
+model = "gemma3:12b"
+temperature = 0.0
 
 # Configurable Namespaces
 [namespaces]
@@ -59,6 +80,7 @@ specs = "docs/specs"
 
 ### 2.1 Configuration Precedence
 
-1. Explicit CLI arguments (e.g. `--mode vector`, `--limit 10`).
+1. Explicit CLI arguments (e.g. `--mode vector`, `--limit 10`, `--model gemma3:12b`).
 2. Values specified in the loaded `config.toml`.
 3. Internal engine defaults.
+

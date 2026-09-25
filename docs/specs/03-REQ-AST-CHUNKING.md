@@ -1,7 +1,7 @@
 # 03-REQ-AST-CHUNKING: Markdown AST-Guided Small-to-Big Chunking
 
 > [!NOTE] **Architectural Rationale**
-> For the experimental evidence proving why AST heading isolation outperforms whole-file stuffing (71.4% vs 50.0%), see [ADR-002: Markdown AST Parsing and Small-to-Big Retrieval Strategy](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs/002-ast-guided-parent-chunking.md).
+> For the experimental evidence proving why AST heading isolation outperforms whole-file stuffing (71.4% vs 50.0%), see [ADR-002: Markdown AST Parsing and Small-to-Big Retrieval Strategy](../adrs/002-ast-guided-parent-chunking.md).
 
 ## 1. AST Structural Parsing
 

@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Addresses [REQ-02: Storage and Retrieval](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/specs/02-REQ-STORAGE-AND-RETRIEVAL.md) and [REQ-05: CLI and Configuration](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/specs/05-REQ-CLI-AND-CONFIG.md).
+Addresses [REQ-02: Storage and Retrieval](../specs/02-REQ-STORAGE-AND-RETRIEVAL.md) and [REQ-05: CLI and Configuration](../specs/05-REQ-CLI-AND-CONFIG.md).
 
 Generating dense semantic embeddings for Markdown AST child chunks and search queries requires a high-dimensional transformer encoder (such as 768-D `nomic-embed-text` or 384-D `all-minilm-l6-v2`).
 

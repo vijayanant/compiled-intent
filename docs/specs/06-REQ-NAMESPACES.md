@@ -1,7 +1,7 @@
 # 06-REQ-NAMESPACES: Directory Namespaces and Attention Isolation
 
 > [!NOTE] **Architectural Rationale**
-> For the research findings and theoretical justification of the Inter-Document Attention Firewall, see [ADR-007: Directory-Based Namespaces and Inter-Document Attention Isolation](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs/007-directory-namespaces-inter-document-firewall.md).
+> For the research findings and theoretical justification of the Inter-Document Attention Firewall, see [ADR-007: Directory-Based Namespaces and Inter-Document Attention Isolation](../adrs/007-directory-namespaces-inter-document-firewall.md).
 
 ## 1. Overview: The Inter-Document Attention Firewall
 

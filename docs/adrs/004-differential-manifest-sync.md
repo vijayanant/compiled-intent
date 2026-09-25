@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Addresses [REQ-04: Sync Lifecycle](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/specs/04-REQ-SYNC-LIFECYCLE.md).
+Addresses [REQ-04: Sync Lifecycle](../specs/04-REQ-SYNC-LIFECYCLE.md).
 
 Embedding generation is computationally expensive: embedding 50 Markdown files via a local LLM or API takes several seconds. Pre-commit hooks run on every local `git commit` and must complete in under 2 seconds.
 

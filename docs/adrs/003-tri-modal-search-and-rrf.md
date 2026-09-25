@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Addresses [REQ-02: Storage and Retrieval](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/specs/02-REQ-STORAGE-AND-RETRIEVAL.md).
+Addresses [REQ-02: Storage and Retrieval](../specs/02-REQ-STORAGE-AND-RETRIEVAL.md).
 
 In an architectural coprocessor, retrieval demands span two conflicting query archetypes:
 

@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Addresses [REQ-03: AST Chunking](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/specs/03-REQ-AST-CHUNKING.md).
+Addresses [REQ-03: AST Chunking](../specs/03-REQ-AST-CHUNKING.md).
 
 Architectural specifications, ADRs, and engineering documentation possess a rigid hierarchical structure: documents are divided into functional sections defined by Markdown headings (`#`, `##`, `###`), containing code blocks, tables, and paragraphs.
 

@@ -1,8 +1,8 @@
 # 01-REQ-MCP-INTERFACE: Model Context Protocol (MCP) Contract
 
 > [!NOTE] **Architectural Rationale**
-> - For the technical evaluation of Stdio transport versus local HTTP/SSE daemons, see [ADR-005: Headless Stdio MCP Protocol and I/O Isolation](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs/005-headless-stdio-mcp-protocol.md).
-> - For the unified normalized relevance score schema, see [ADR-009: Unified Normalized Relevance Score Architecture](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs/009-unified-normalized-relevance-score.md).
+> - For the technical evaluation of Stdio transport versus local HTTP/SSE daemons, see [ADR-005: Headless Stdio MCP Protocol and I/O Isolation](../adrs/005-headless-stdio-mcp-protocol.md).
+> - For the unified normalized relevance score schema, see [ADR-009: Unified Normalized Relevance Score Architecture](../adrs/009-unified-normalized-relevance-score.md).
 
 ## 1. Transport & Wire Protocol
 

@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Addresses [REQ-05: CLI and Config](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/specs/05-REQ-CLI-AND-CONFIG.md).
+Addresses [REQ-05: CLI and Config](../specs/05-REQ-CLI-AND-CONFIG.md).
 
 Compiled Intent is used in two primary environments:
 

@@ -105,5 +105,5 @@ src/
 
 The `docs/` directory follows the industry standard separating **Contracts (WHAT)** from **Decisions (WHY)**:
 
-- [docs/specs/](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/specs): Living functional specifications defining schemas, CLI flags, protocols, and invariants.
-- [docs/adrs/](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/adrs): Immutable chronological decision records evaluating competing options, trade-offs, and consequences.
+- [docs/specs/](./specs): Living functional specifications defining schemas, CLI flags, protocols, and invariants.
+- [docs/adrs/](./adrs): Immutable chronological decision records evaluating competing options, trade-offs, and consequences.

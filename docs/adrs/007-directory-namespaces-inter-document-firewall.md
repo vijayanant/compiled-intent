@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Addresses [REQ-06: Namespaces](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/specs/06-REQ-NAMESPACES.md).
+Addresses [REQ-06: Namespaces](../specs/06-REQ-NAMESPACES.md).
 
 Real-world software repositories contain diverse documentation types: normative Architecture Decision Records (ADRs), descriptive API specifications, operational runbooks, and design proposals. These documents frequently share identical technical vocabularies (e.g., cryptographic keys, networking protocols, database models).
 

@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Addresses [REQ-02: Storage and Retrieval](file:///Users/vj/workspace/blogging-assistant/compiled-intent/docs/specs/02-REQ-STORAGE-AND-RETRIEVAL.md).
+Addresses [REQ-02: Storage and Retrieval](../specs/02-REQ-STORAGE-AND-RETRIEVAL.md).
 
 Compiled Intent is designed to operate as an autonomous, zero-friction architectural coprocessor in local developer environments and CI/CD pre-commit hooks. It must store high-dimensional embeddings (384-D / 768-D) for semantic similarity search alongside raw document strings for exact code symbol retrieval (e.g., `SessionLedger`, custom error types).
 
