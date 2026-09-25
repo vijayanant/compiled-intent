@@ -34,3 +34,11 @@ too_many_arguments = "warn"
 too_many_lines = "warn"
 disallowed_names = "deny"
 doc_markdown = "warn"
+
+[profile.release]
+opt-level = 3
+strip = true
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+

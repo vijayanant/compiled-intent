@@ -9,6 +9,7 @@
 mod integration {
     pub mod common;
     pub mod indexer_pipeline;
+    pub mod llm_client;
     pub mod mcp_protocol;
     pub mod retrieval_engine;
 }

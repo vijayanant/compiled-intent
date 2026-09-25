@@ -51,6 +51,7 @@ pub fn create_test_engine(temp_dir: &TempTestDir) -> CompitentEngine {
         embedding_dimensions: 384,
         intent_dir: temp_dir.path.display().to_string(),
         lancedb_path: temp_dir.path.join("lancedb").display().to_string(),
+        ..Default::default()
     };
     CompitentEngine::new(config)
 }

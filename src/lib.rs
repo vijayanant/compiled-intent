@@ -7,6 +7,7 @@ pub const DEFAULT_TABLE_NAME: &str = "adrs";
 pub mod config;
 pub mod engine;
 pub mod indexer;
+pub mod llm;
 pub mod mcp;
 pub mod telemetry;
 

@@ -181,6 +181,7 @@ mod tests {
             embedding_dimensions: 384,
             intent_dir: temp_dir.display().to_string(),
             lancedb_path: temp_dir.join("db").display().to_string(),
+            ..Default::default()
         });
 
         // 1. Unknown tool returns JSONRPC_METHOD_NOT_FOUND (-32601)

@@ -1,6 +1,23 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct LlmConfig {
+    pub endpoint: String,
+    pub model: String,
+    pub temperature: f32,
+}
+
+impl Default for LlmConfig {
+    fn default() -> Self {
+        Self {
+            endpoint: "http://localhost:11434/api/chat".to_string(),
+            model: "gemma3:12b".to_string(),
+            temperature: 0.0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct EngineConfig {
     pub llama_endpoint: String,
@@ -8,6 +25,8 @@ pub struct EngineConfig {
     pub embedding_dimensions: i32,
     pub intent_dir: String,
     pub lancedb_path: String,
+    #[serde(default)]
+    pub llm: LlmConfig,
 }
 
 impl Default for EngineConfig {
@@ -18,6 +37,7 @@ impl Default for EngineConfig {
             embedding_dimensions: 768,
             intent_dir: ".intent".to_string(),
             lancedb_path: ".intent/lancedb".to_string(),
+            llm: LlmConfig::default(),
         }
     }
 }
@@ -95,5 +115,34 @@ mod tests {
     fn test_load_fallback_to_default_when_none_provided() {
         let config = EngineConfig::load(None);
         assert_eq!(config.lancedb_path, ".intent/lancedb");
+        assert_eq!(config.llm.model, "gemma3:12b");
+        assert_eq!(config.llm.endpoint, "http://localhost:11434/api/chat");
+    }
+
+    #[test]
+    fn test_llm_config_custom_override() {
+        let temp_dir = std::env::temp_dir().join(format!("intent_llm_{}", std::process::id()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let path = temp_dir.join("llm.toml");
+        let toml_str = r#"
+            llama_endpoint = "http://localhost:11434/api/embeddings"
+            embedding_model = "nomic-embed-text"
+            embedding_dimensions = 768
+            intent_dir = ".intent"
+            lancedb_path = ".intent/lancedb"
+
+            [llm]
+            endpoint = "http://remote:11434/api/chat"
+            model = "qwen2.5-coder:7b"
+            temperature = 0.2
+        "#;
+        std::fs::write(&path, toml_str).unwrap();
+
+        let cfg = EngineConfig::load(Some(path.display().to_string()));
+        assert_eq!(cfg.llm.endpoint, "http://remote:11434/api/chat");
+        assert_eq!(cfg.llm.model, "qwen2.5-coder:7b");
+        assert!((cfg.llm.temperature - 0.2).abs() < 1e-5);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
