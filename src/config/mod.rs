@@ -25,8 +25,14 @@ pub struct EngineConfig {
     pub embedding_dimensions: i32,
     pub intent_dir: String,
     pub lancedb_path: String,
+    #[serde(default = "default_log_level")]
+    pub log_level: String,
     #[serde(default)]
     pub llm: LlmConfig,
+}
+
+fn default_log_level() -> String {
+    "warn".to_string()
 }
 
 impl Default for EngineConfig {
@@ -37,6 +43,7 @@ impl Default for EngineConfig {
             embedding_dimensions: 768,
             intent_dir: ".intent".to_string(),
             lancedb_path: ".intent/lancedb".to_string(),
+            log_level: default_log_level(),
             llm: LlmConfig::default(),
         }
     }

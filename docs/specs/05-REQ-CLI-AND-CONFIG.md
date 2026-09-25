@@ -9,9 +9,11 @@
 
 The software MUST be packaged as a single standalone executable named **`intent`**.
 
-### 1.1 Global Configuration Resolution
+### 1.1 Global Configuration and Flags
 
-- The CLI MUST accept an optional global flag `--config <path>` preceding any subcommand.
+- `--config <path>`: Optional path to a custom configuration file.
+- `-v`, `--verbose`: Enables verbose diagnostic logging on `stderr`.
+- `-V`, `--version`: Prints the canonical binary version.
 - If `--config` is omitted, the engine MUST look for `.intent/config.toml` in the current working directory.
 - If no configuration file is found, the engine MUST initialize using safe internal defaults.
 
@@ -60,6 +62,7 @@ The configuration file format is TOML:
 # Database Storage
 lancedb_path = ".intent/lancedb"
 table_name = "adrs"
+log_level = "warn" # Options: error, warn, info, debug
 
 # External Embedding Model (ADR-008)
 llama_endpoint = "http://localhost:11434/api/embeddings"

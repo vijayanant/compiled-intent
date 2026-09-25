@@ -7,10 +7,15 @@ use compiled_intent::telemetry;
 #[derive(Parser, Debug, PartialEq)]
 #[command(name = "intent")]
 #[command(about = "The Universal Semantic Filesystem CLI & MCP Server", long_about = None)]
+#[command(version)]
 pub struct Cli {
     /// Optional path to config file
     #[arg(long, global = true)]
     pub config: Option<String>,
+
+    /// Enable verbose logging output
+    #[arg(short, long, global = true)]
+    pub verbose: bool,
 
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -213,9 +218,9 @@ async fn dispatch_command(
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    telemetry::init_tracing();
     let cli = Cli::parse();
     let config = EngineConfig::load(cli.config.clone());
+    telemetry::init_tracing(cli.verbose, Some(&config.log_level));
     let engine = CompitentEngine::new(config.clone());
     dispatch_command(&cli, engine, &config).await
 }
@@ -344,5 +349,23 @@ mod tests {
                 no_sources: true,
             })
         );
+    }
+
+    #[test]
+    fn test_cli_verbose_flag() {
+        let cli_default = Cli::try_parse_from(["intent"]).unwrap();
+        assert!(!cli_default.verbose);
+
+        let cli_verbose = Cli::try_parse_from(["intent", "-v"]).unwrap();
+        assert!(cli_verbose.verbose);
+
+        let cli_verbose_long = Cli::try_parse_from(["intent", "--verbose", "serve"]).unwrap();
+        assert!(cli_verbose_long.verbose);
+    }
+
+    #[test]
+    fn test_cli_version_flag() {
+        let err = Cli::try_parse_from(["intent", "--version"]).unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::DisplayVersion);
     }
 }
