@@ -10,7 +10,7 @@
 //! - REQ-04: Sync Lifecycle
 
 use super::common::TempTestDir;
-use compiled_intent::indexer::{
+use compitent_engine::indexer::{
     chunk_markdown, ArrowBatchBuilder, IndexChunk, LanceStorage, Manifest,
 };
 

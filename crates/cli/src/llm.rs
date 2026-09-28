@@ -1,4 +1,4 @@
-use crate::error::CompitentError;
+use compitent_engine::error::CompitentError;
 use serde_json::json;
 use std::io::Write;
 

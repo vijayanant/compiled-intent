@@ -1,7 +1,7 @@
-use crate::config::EngineConfig;
-use crate::engine::{CompitentEngine, SearchFilterOptions};
-use crate::error::CompitentError;
 use crate::llm;
+use compitent_engine::config::EngineConfig;
+use compitent_engine::engine::{CompitentEngine, SearchFilterOptions};
+use compitent_engine::error::CompitentError;
 use serde::{Deserialize, Serialize};
 use std::io::{self, IsTerminal, Read, Write};
 use std::process::Command;

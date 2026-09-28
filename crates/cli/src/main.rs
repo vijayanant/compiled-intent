@@ -1,8 +1,10 @@
 use clap::{Parser, Subcommand};
-use compiled_intent::config::EngineConfig;
-use compiled_intent::engine::CompitentEngine;
-use compiled_intent::mcp::McpServer;
-use compiled_intent::telemetry;
+use compitent_engine::config::EngineConfig;
+use compitent_engine::engine::CompitentEngine;
+use compitent_engine::telemetry;
+use intent::audit;
+use intent::llm;
+use intent::mcp::McpServer;
 
 #[derive(Parser, Debug, PartialEq)]
 #[command(name = "intent")]
@@ -134,7 +136,7 @@ async fn handle_search(
     query: &str,
     mode: &str,
     limit: usize,
-    filters: compiled_intent::engine::SearchFilterOptions,
+    filters: compitent_engine::engine::SearchFilterOptions,
 ) -> anyhow::Result<()> {
     tracing::info!("Searching for: {} (Mode: {})", query, mode);
     let results = engine
@@ -149,7 +151,7 @@ async fn handle_ask(
     config: &EngineConfig,
     args: &AskArgs<'_>,
 ) -> anyhow::Result<()> {
-    let filters = compiled_intent::engine::SearchFilterOptions {
+    let filters = compitent_engine::engine::SearchFilterOptions {
         min_score: Some(args.min_score),
         score_tolerance: Some(args.score_tolerance),
     };
@@ -164,8 +166,7 @@ async fn handle_ask(
         return Ok(());
     }
 
-    let (sys_prompt, user_prompt) =
-        compiled_intent::llm::build_grounding_prompt(args.question, &results);
+    let (sys_prompt, user_prompt) = llm::build_grounding_prompt(args.question, &results);
     let target_endpoint = args.endpoint.unwrap_or(&config.llm.endpoint);
     let target_model = args.model.unwrap_or(&config.llm.model);
 
@@ -173,7 +174,7 @@ async fn handle_ask(
     let stdout = std::io::stdout();
     let mut handle = stdout.lock();
 
-    compiled_intent::llm::stream_chat_completion(
+    llm::stream_chat_completion(
         &client,
         target_endpoint,
         target_model,
@@ -193,7 +194,7 @@ async fn handle_ask(
 
 async fn handle_index_dispatch(engine: &CompitentEngine, path: &str) -> anyhow::Result<()> {
     tracing::info!("Indexing directory: {}", path);
-    compiled_intent::indexer::index_adrs(engine, &[path]).await?;
+    compitent_engine::indexer::index_adrs(engine, &[path]).await?;
     tracing::info!("Indexing complete!");
     Ok(())
 }
@@ -206,7 +207,7 @@ async fn handle_search_dispatch(
     min_score: Option<f32>,
     score_tolerance: Option<f32>,
 ) -> anyhow::Result<()> {
-    let filters = compiled_intent::engine::SearchFilterOptions {
+    let filters = compitent_engine::engine::SearchFilterOptions {
         min_score,
         score_tolerance,
     };
@@ -224,9 +225,9 @@ async fn handle_ask_dispatch(
 async fn handle_audit_dispatch(
     engine: &CompitentEngine,
     config: &EngineConfig,
-    args: compiled_intent::audit::AuditArgs<'_>,
+    args: audit::AuditArgs<'_>,
 ) -> anyhow::Result<()> {
-    let passed = compiled_intent::audit::handle_audit(engine, config, &args).await?;
+    let passed = audit::handle_audit(engine, config, &args).await?;
     if !passed {
         std::process::exit(1);
     }
@@ -282,7 +283,7 @@ async fn dispatch_audit_variant(
         strict,
     } = cmd
     {
-        let args = compiled_intent::audit::AuditArgs {
+        let args = audit::AuditArgs {
             message: message.as_deref(),
             file: file.as_deref(),
             commit: commit.as_deref(),

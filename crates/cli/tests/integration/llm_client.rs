@@ -1,4 +1,4 @@
-use compiled_intent::llm::stream_chat_completion;
+use intent::llm::stream_chat_completion;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 

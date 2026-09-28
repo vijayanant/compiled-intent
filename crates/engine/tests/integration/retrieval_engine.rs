@@ -10,7 +10,7 @@
 
 use super::common::{create_test_engine, TempTestDir};
 use arrow::array::StringArray;
-use compiled_intent::indexer::{ArrowBatchBuilder, IndexChunk, LanceStorage};
+use compitent_engine::indexer::{ArrowBatchBuilder, IndexChunk, LanceStorage};
 use futures::stream::StreamExt;
 use lance_index::scalar::FullTextSearchQuery;
 use lancedb::query::{ExecutableQuery, QueryBase};
@@ -382,7 +382,7 @@ async fn test_adaptive_retrieval_window_gating() {
             "TargetSymbol",
             5,
             "fts",
-            compiled_intent::engine::SearchFilterOptions {
+            compitent_engine::engine::SearchFilterOptions {
                 min_score: None,
                 score_tolerance: Some(0.05),
             },
@@ -402,7 +402,7 @@ async fn test_adaptive_retrieval_window_gating() {
             "TargetSymbol",
             5,
             "fts",
-            compiled_intent::engine::SearchFilterOptions {
+            compitent_engine::engine::SearchFilterOptions {
                 min_score: Some(0.99),
                 score_tolerance: None,
             },
