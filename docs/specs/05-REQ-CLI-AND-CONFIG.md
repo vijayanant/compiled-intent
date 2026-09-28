@@ -9,12 +9,13 @@
 
 The software MUST be packaged as a single standalone executable named **`intent`**.
 
-### 1.1 Global Configuration and Flags
+### 1.1 Global Configuration, Flags, and Project Anchoring
 
 - `--config <path>`: Optional path to a custom configuration file.
 - `-v`, `--verbose`: Enables verbose diagnostic logging on `stderr`.
 - `-V`, `--version`: Prints the canonical binary version.
-- If `--config` is omitted, the engine MUST look for `.intent/config.toml` in the current working directory.
+- **Upward Config Discovery**: If `--config` is omitted, the engine MUST walk upward from the current working directory searching for `.intent/config.toml`. If found, that directory containing `.intent/` becomes the active project root.
+- **Project Root Anchoring**: When `--config <path>` is supplied, the project root is anchored to the parent directory of `.intent/`. The process working directory and all relative paths in configuration (`lancedb_path`, `intent_dir`) resolve relative to this project root.
 - If no configuration file is found, the engine MUST initialize using safe internal defaults.
 
 ### 1.2 Subcommands

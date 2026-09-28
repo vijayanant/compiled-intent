@@ -216,9 +216,41 @@ async fn dispatch_command(
     Ok(())
 }
 
+fn detect_and_set_project_root(custom_config: &Option<String>) {
+    if let Some(cfg_path_str) = custom_config {
+        let cfg_path = std::path::PathBuf::from(cfg_path_str);
+        let abs_path = if cfg_path.is_relative() {
+            std::env::current_dir().unwrap_or_default().join(&cfg_path)
+        } else {
+            cfg_path
+        };
+        if let Some(parent) = abs_path.parent() {
+            let project_root = if parent.file_name() == Some(std::ffi::OsStr::new(".intent")) {
+                parent.parent().unwrap_or(parent)
+            } else {
+                parent
+            };
+            if project_root.is_dir() {
+                let _ = std::env::set_current_dir(project_root);
+            }
+        }
+    } else if let Ok(mut current) = std::env::current_dir() {
+        loop {
+            if current.join(".intent").is_dir() {
+                let _ = std::env::set_current_dir(&current);
+                break;
+            }
+            if !current.pop() {
+                break;
+            }
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    detect_and_set_project_root(&cli.config);
     let config = EngineConfig::load(cli.config.clone());
     telemetry::init_tracing(cli.verbose, Some(&config.log_level));
     let engine = CompitentEngine::new(config.clone());
