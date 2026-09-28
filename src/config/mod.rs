@@ -52,22 +52,20 @@ impl Default for EngineConfig {
 impl EngineConfig {
     pub fn load(custom_path: Option<String>) -> Self {
         let is_custom = custom_path.is_some();
-        let config_path = custom_path
-            .map(PathBuf::from)
-            .unwrap_or_else(|| {
-                if let Ok(mut cur) = std::env::current_dir() {
-                    loop {
-                        let candidate = cur.join(".intent/config.toml");
-                        if candidate.is_file() {
-                            return candidate;
-                        }
-                        if !cur.pop() {
-                            break;
-                        }
+        let config_path = custom_path.map(PathBuf::from).unwrap_or_else(|| {
+            if let Ok(mut cur) = std::env::current_dir() {
+                loop {
+                    let candidate = cur.join(".intent/config.toml");
+                    if candidate.is_file() {
+                        return candidate;
+                    }
+                    if !cur.pop() {
+                        break;
                     }
                 }
-                PathBuf::from(".intent/config.toml")
-            });
+            }
+            PathBuf::from(".intent/config.toml")
+        });
 
         match std::fs::read_to_string(&config_path) {
             Ok(contents) => match toml::from_str(&contents) {

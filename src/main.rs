@@ -71,6 +71,36 @@ pub enum Commands {
         #[arg(long)]
         no_sources: bool,
     },
+    /// Audit code changes against architectural invariants (pre-commit / CI gate)
+    Audit {
+        /// Commit message or intent rationale
+        #[arg(short, long)]
+        message: Option<String>,
+        /// Path to a commit message file (e.g. `.git/COMMIT_EDITMSG`)
+        #[arg(short, long)]
+        file: Option<String>,
+        /// Specific commit hash or revision to audit (e.g. HEAD, HEAD~1..HEAD)
+        #[arg(short, long)]
+        commit: Option<String>,
+        /// LLM model name (overrides config)
+        #[arg(long)]
+        model: Option<String>,
+        /// LLM HTTP chat endpoint (overrides config)
+        #[arg(long)]
+        endpoint: Option<String>,
+        /// Restrict retrieval to a specific namespace
+        #[arg(long)]
+        namespace: Option<String>,
+        /// Maximum candidate chunks to retrieve before collapsing
+        #[arg(long, default_value_t = 3)]
+        limit: usize,
+        /// Minimum normalized confidence score floor in [0.0, 1.0]
+        #[arg(long)]
+        min_score: Option<f32>,
+        /// Fail with exit code 1 if LLM endpoint is unreachable
+        #[arg(long)]
+        strict: bool,
+    },
     /// Start the Model Context Protocol (MCP) server on stdio (default)
     Serve,
 }
@@ -161,17 +191,121 @@ async fn handle_ask(
     Ok(())
 }
 
+async fn handle_index_dispatch(engine: &CompitentEngine, path: &str) -> anyhow::Result<()> {
+    tracing::info!("Indexing directory: {}", path);
+    compiled_intent::indexer::index_adrs(engine, &[path]).await?;
+    tracing::info!("Indexing complete!");
+    Ok(())
+}
+
+async fn handle_search_dispatch(
+    engine: &CompitentEngine,
+    query: &str,
+    mode: &str,
+    limit: usize,
+    min_score: Option<f32>,
+    score_tolerance: Option<f32>,
+) -> anyhow::Result<()> {
+    let filters = compiled_intent::engine::SearchFilterOptions {
+        min_score,
+        score_tolerance,
+    };
+    handle_search(engine, query, mode, limit, filters).await
+}
+
+async fn handle_ask_dispatch(
+    engine: &CompitentEngine,
+    config: &EngineConfig,
+    args: AskArgs<'_>,
+) -> anyhow::Result<()> {
+    handle_ask(engine, config, &args).await
+}
+
+async fn handle_audit_dispatch(
+    engine: &CompitentEngine,
+    config: &EngineConfig,
+    args: compiled_intent::audit::AuditArgs<'_>,
+) -> anyhow::Result<()> {
+    let passed = compiled_intent::audit::handle_audit(engine, config, &args).await?;
+    if !passed {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+async fn dispatch_ask_variant(
+    cmd: &Commands,
+    engine: &CompitentEngine,
+    config: &EngineConfig,
+) -> anyhow::Result<()> {
+    if let Commands::Ask {
+        question,
+        model,
+        endpoint,
+        limit,
+        min_score,
+        score_tolerance,
+        mode,
+        no_sources,
+    } = cmd
+    {
+        let args = AskArgs {
+            question,
+            model: model.as_deref(),
+            endpoint: endpoint.as_deref(),
+            limit: *limit,
+            min_score: *min_score,
+            score_tolerance: *score_tolerance,
+            mode,
+            no_sources: *no_sources,
+        };
+        handle_ask_dispatch(engine, config, args).await
+    } else {
+        Ok(())
+    }
+}
+
+async fn dispatch_audit_variant(
+    cmd: &Commands,
+    engine: &CompitentEngine,
+    config: &EngineConfig,
+) -> anyhow::Result<()> {
+    if let Commands::Audit {
+        message,
+        file,
+        commit,
+        model,
+        endpoint,
+        namespace,
+        limit,
+        min_score,
+        strict,
+    } = cmd
+    {
+        let args = compiled_intent::audit::AuditArgs {
+            message: message.as_deref(),
+            file: file.as_deref(),
+            commit: commit.as_deref(),
+            model: model.as_deref(),
+            endpoint: endpoint.as_deref(),
+            namespace: namespace.as_deref(),
+            limit: *limit,
+            min_score: *min_score,
+            strict: *strict,
+        };
+        handle_audit_dispatch(engine, config, args).await
+    } else {
+        Ok(())
+    }
+}
+
 async fn dispatch_command(
     cli: &Cli,
     engine: CompitentEngine,
     config: &EngineConfig,
 ) -> anyhow::Result<()> {
     match &cli.command {
-        Some(Commands::Index { path }) => {
-            tracing::info!("Indexing directory: {}", path);
-            compiled_intent::indexer::index_adrs(&engine, &[path]).await?;
-            tracing::info!("Indexing complete!");
-        }
+        Some(Commands::Index { path }) => handle_index_dispatch(&engine, path).await,
         Some(Commands::Search {
             query,
             mode,
@@ -179,41 +313,16 @@ async fn dispatch_command(
             min_score,
             score_tolerance,
         }) => {
-            let filters = compiled_intent::engine::SearchFilterOptions {
-                min_score: *min_score,
-                score_tolerance: *score_tolerance,
-            };
-            handle_search(&engine, query, mode, *limit, filters).await?;
+            handle_search_dispatch(&engine, query, mode, *limit, *min_score, *score_tolerance).await
         }
-        Some(Commands::Ask {
-            question,
-            model,
-            endpoint,
-            limit,
-            min_score,
-            score_tolerance,
-            mode,
-            no_sources,
-        }) => {
-            let args = AskArgs {
-                question,
-                model: model.as_deref(),
-                endpoint: endpoint.as_deref(),
-                limit: *limit,
-                min_score: *min_score,
-                score_tolerance: *score_tolerance,
-                mode,
-                no_sources: *no_sources,
-            };
-            handle_ask(&engine, config, &args).await?;
-        }
+        Some(cmd @ Commands::Ask { .. }) => dispatch_ask_variant(cmd, &engine, config).await,
+        Some(cmd @ Commands::Audit { .. }) => dispatch_audit_variant(cmd, &engine, config).await,
         Some(Commands::Serve) | None => {
             tracing::info!("Compitent Engine: Booting System Domain (MCP Stdio)...");
             let server = McpServer::new(engine);
-            server.run().await?;
+            server.run().await.map_err(Into::into)
         }
     }
-    Ok(())
 }
 
 fn detect_and_set_project_root(custom_config: &Option<String>) {
@@ -399,5 +508,58 @@ mod tests {
     fn test_cli_version_flag() {
         let err = Cli::try_parse_from(["intent", "--version"]).unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::DisplayVersion);
+    }
+
+    #[test]
+    fn test_cli_audit_defaults() {
+        let cli = Cli::try_parse_from(["intent", "audit", "-m", "fix(mcp): ping"]).unwrap();
+        assert_eq!(
+            cli.command,
+            Some(Commands::Audit {
+                message: Some("fix(mcp): ping".to_string()),
+                file: None,
+                commit: None,
+                model: None,
+                endpoint: None,
+                namespace: None,
+                limit: 3,
+                min_score: None,
+                strict: false,
+            })
+        );
+    }
+
+    #[test]
+    fn test_cli_audit_custom_flags() {
+        let cli = Cli::try_parse_from([
+            "intent",
+            "audit",
+            "--commit",
+            "HEAD",
+            "--model",
+            "gemma3:12b",
+            "--endpoint",
+            "http://localhost:11434/api/chat",
+            "--namespace",
+            "adrs",
+            "--limit",
+            "5",
+            "--strict",
+        ])
+        .unwrap();
+        assert_eq!(
+            cli.command,
+            Some(Commands::Audit {
+                message: None,
+                file: None,
+                commit: Some("HEAD".to_string()),
+                model: Some("gemma3:12b".to_string()),
+                endpoint: Some("http://localhost:11434/api/chat".to_string()),
+                namespace: Some("adrs".to_string()),
+                limit: 5,
+                min_score: None,
+                strict: true,
+            })
+        );
     }
 }

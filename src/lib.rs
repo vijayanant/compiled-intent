@@ -4,6 +4,7 @@
 
 pub const DEFAULT_TABLE_NAME: &str = "adrs";
 
+pub mod audit;
 pub mod config;
 pub mod engine;
 pub mod indexer;

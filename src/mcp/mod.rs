@@ -135,22 +135,28 @@ impl McpServer {
                 error: None,
             }),
             "tools/call" => Some(self.handle_tools_call(id, req.params).await),
-            _ => {
-                if is_notification || req.method.starts_with("notifications/") {
-                    tracing::debug!("Ignoring unhandled notification: {}", req.method);
-                    None
-                } else {
-                    tracing::warn!("Unhandled method: {}", req.method);
-                    Some(RpcResponse {
-                        jsonrpc: JSONRPC_VERSION.to_string(),
-                        id,
-                        result: None,
-                        error: Some(
-                            json!({ "code": tools::JSONRPC_METHOD_NOT_FOUND, "message": "Method not supported" }),
-                        ),
-                    })
-                }
-            }
+            _ => Self::unhandled_method_response(&req.method, is_notification, id),
+        }
+    }
+
+    fn unhandled_method_response(
+        method: &str,
+        is_notification: bool,
+        id: serde_json::Value,
+    ) -> Option<RpcResponse> {
+        if is_notification || method.starts_with("notifications/") {
+            tracing::debug!("Ignoring unhandled notification: {}", method);
+            None
+        } else {
+            tracing::warn!("Unhandled method: {}", method);
+            Some(RpcResponse {
+                jsonrpc: JSONRPC_VERSION.to_string(),
+                id,
+                result: None,
+                error: Some(
+                    json!({ "code": tools::JSONRPC_METHOD_NOT_FOUND, "message": "Method not supported" }),
+                ),
+            })
         }
     }
 

@@ -4,6 +4,7 @@
 > - For the decision to consolidate the CLI and MCP daemon into a single unified binary, see [ADR-006: Unified Binary Architecture and CLI Topology](../adrs/006-unified-binary-architecture.md).
 > - For the decision to decouple embedding inference to an external local daemon (Ollama) rather than bundling model weights, see [ADR-008: Decoupled Local Embedding Provider Architecture](../adrs/008-decoupled-local-embedding-provider.md).
 > - For the decision to provide a native Q&A subcommand (`intent ask`) with decoupled streaming generation, see [ADR-010: Document Q&A Subcommand](../adrs/010-doc-qa-subcommand.md).
+> - For the decision to provide a native pre-commit and CI verification gate (`intent audit`), see [ADR-011: Native Architectural Guardian Subcommand](../adrs/011-native-architectural-guardian-subcommand.md).
 
 ## 1. Canonical Binary Topology
 
@@ -46,6 +47,20 @@ The software MUST be packaged as a single standalone executable named **`intent`
   - `--namespace <name>`: Restrict retrieval to a specific directory namespace (optional).
   - `--no-stream`: Disable real-time token streaming and emit the full response at completion.
   - `--no-sources`: Omit the citation attribution footer.
+
+#### `intent audit [OPTIONS]`
+
+- Audits staged code changes or specific commits against governing architectural invariants using a local or remote LLM merge gate.
+- Emits formatted `[PASS]` or `[VETO]` results with exit code `0` on success and exit code `1` on invariant violation or policy failure.
+- **Flags**:
+  - `-m, --message <intent>`: Explicit commit message or intent rationale.
+  - `-c, --commit <rev>`: Specific commit or git revision to audit (e.g. `HEAD`, `HEAD~1..HEAD`).
+  - `-f, --file <path>`: Path to a commit message file (e.g. `.git/COMMIT_EDITMSG`).
+  - `--model <name>`: Target model identifier (default: from config `llm.model` or `qwen2.5-coder:14b`).
+  - `--endpoint <url>`: Target HTTP completion endpoint (default: from config `llm.endpoint` or `http://localhost:11434/api/chat`).
+  - `--limit <N>`: Candidate over-fetch limit before parent collapsing (default: `3`).
+  - `--namespace <name>`: Restrict retrieval to a specific directory namespace (optional).
+  - `--strict`: Terminate with exit code `1` if the LLM inference server is unreachable.
 
 #### `intent serve`
 

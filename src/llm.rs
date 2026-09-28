@@ -182,6 +182,86 @@ pub async fn stream_chat_completion<W: Write>(
     consume_stream(response, is_openai, writer).await
 }
 
+/// Parses the generated text from an Ollama or `OpenAI` JSON response payload.
+pub fn parse_chat_response(resp_val: &serde_json::Value) -> Option<String> {
+    // OpenAI / vLLM format: choices[0].message.content
+    if let Some(content) = resp_val
+        .get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|m| m.get("message"))
+        .and_then(|c| c.get("content"))
+        .and_then(|s| s.as_str())
+    {
+        return Some(content.to_string());
+    }
+
+    // Ollama /api/chat format: message.content
+    if let Some(content) = resp_val
+        .get("message")
+        .and_then(|m| m.get("content"))
+        .and_then(|s| s.as_str())
+    {
+        return Some(content.to_string());
+    }
+
+    // Ollama /api/generate format: response
+    if let Some(content) = resp_val.get("response").and_then(|s| s.as_str()) {
+        return Some(content.to_string());
+    }
+
+    None
+}
+
+/// Completes a non-streaming chat request against the decoupled LLM endpoint.
+pub async fn complete_chat(
+    client: &reqwest::Client,
+    endpoint: &str,
+    model: &str,
+    temperature: f32,
+    system_prompt: &str,
+    user_prompt: &str,
+) -> Result<String, CompitentError> {
+    let payload = if endpoint.contains("/api/generate") {
+        let combined_prompt = if system_prompt.is_empty() {
+            user_prompt.to_string()
+        } else {
+            format!("{}\n\n{}", system_prompt, user_prompt)
+        };
+        json!({
+            "model": model,
+            "prompt": combined_prompt,
+            "stream": false,
+            "options": {
+                "temperature": temperature,
+            }
+        })
+    } else {
+        build_chat_payload(
+            endpoint,
+            model,
+            temperature,
+            system_prompt,
+            user_prompt,
+            false,
+        )
+    };
+
+    let response = send_chat_request(client, endpoint, &payload).await?;
+    let resp_val: serde_json::Value = response.json().await.map_err(|e| {
+        CompitentError::Network(format!(
+            "Failed to parse JSON response from LLM endpoint: {}",
+            e
+        ))
+    })?;
+
+    parse_chat_response(&resp_val).ok_or_else(|| {
+        CompitentError::Internal(format!(
+            "Unexpected JSON response format from LLM endpoint: {}",
+            resp_val
+        ))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -215,5 +295,32 @@ mod tests {
 
         let done_sample = "data: [DONE]";
         assert_eq!(parse_openai_chunk(done_sample), None);
+    }
+
+    #[test]
+    fn test_parse_chat_response_formats() {
+        let openai_sample = json!({
+            "choices": [{"message": {"role": "assistant", "content": "OpenAI verdict"}}]
+        });
+        assert_eq!(
+            parse_chat_response(&openai_sample),
+            Some("OpenAI verdict".to_string())
+        );
+
+        let ollama_chat_sample = json!({
+            "message": {"role": "assistant", "content": "Ollama chat verdict"}
+        });
+        assert_eq!(
+            parse_chat_response(&ollama_chat_sample),
+            Some("Ollama chat verdict".to_string())
+        );
+
+        let ollama_gen_sample = json!({
+            "response": "Ollama gen verdict"
+        });
+        assert_eq!(
+            parse_chat_response(&ollama_gen_sample),
+            Some("Ollama gen verdict".to_string())
+        );
     }
 }
