@@ -99,9 +99,13 @@ impl McpServer {
     }
 
     async fn handle_request(&self, req: RpcRequest) -> Option<RpcResponse> {
+        let is_notification = req.id.is_none();
         let id = req.id.clone().unwrap_or(json!(null));
 
         if req.jsonrpc != JSONRPC_VERSION {
+            if is_notification {
+                return None;
+            }
             return Some(RpcResponse {
                 jsonrpc: JSONRPC_VERSION.to_string(),
                 id,
@@ -118,6 +122,12 @@ impl McpServer {
                 tracing::info!("Client initialized.");
                 None
             }
+            "ping" => Some(RpcResponse {
+                jsonrpc: JSONRPC_VERSION.to_string(),
+                id,
+                result: Some(json!({})),
+                error: None,
+            }),
             "tools/list" => Some(RpcResponse {
                 jsonrpc: JSONRPC_VERSION.to_string(),
                 id,
@@ -126,15 +136,20 @@ impl McpServer {
             }),
             "tools/call" => Some(self.handle_tools_call(id, req.params).await),
             _ => {
-                tracing::warn!("Unhandled method: {}", req.method);
-                Some(RpcResponse {
-                    jsonrpc: JSONRPC_VERSION.to_string(),
-                    id,
-                    result: None,
-                    error: Some(
-                        json!({ "code": tools::JSONRPC_METHOD_NOT_FOUND, "message": "Method not supported" }),
-                    ),
-                })
+                if is_notification || req.method.starts_with("notifications/") {
+                    tracing::debug!("Ignoring unhandled notification: {}", req.method);
+                    None
+                } else {
+                    tracing::warn!("Unhandled method: {}", req.method);
+                    Some(RpcResponse {
+                        jsonrpc: JSONRPC_VERSION.to_string(),
+                        id,
+                        result: None,
+                        error: Some(
+                            json!({ "code": tools::JSONRPC_METHOD_NOT_FOUND, "message": "Method not supported" }),
+                        ),
+                    })
+                }
             }
         }
     }

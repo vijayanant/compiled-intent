@@ -37,12 +37,14 @@ We choose **Option 3: Model Context Protocol (MCP) over Stdio**.
 
 The engine runs headlessly, processing JSON-RPC 2.0 requests over `stdin` and emitting responses strictly over `stdout`.
 
-### Non-Negotiable Invariant: Stdio Isolation
+### Non-Negotiable Invariants: Stdio Isolation & Protocol Compliance
 
 Because standard output is the dedicated JSON-RPC transport medium:
 
 - **`stdout` is strictly reserved for valid JSON-RPC 2.0 frames**. Under no circumstances may application code, debug statements, third-party libraries, or panic hooks write to `stdout`.
 - **`stderr` is the dedicated diagnostic channel**. All telemetry, `tracing` subscribers, informational logs, and error traces MUST write exclusively to `stderr`.
+- **MCP Liveness Compliance**: The server MUST respond to standard `ping` requests (`{ "method": "ping" }`) with an empty object result (`{ "result": {} }`) to maintain persistent client connections.
+- **Notification Silence**: In accordance with JSON-RPC 2.0 §4.1, incoming notifications (frames without an `id` member) MUST NEVER receive a response on `stdout`. Emitting an error frame for a notification violates the protocol and causes MCP clients to terminate the connection.
 
 ## Rejected Alternatives
 
@@ -52,4 +54,4 @@ Because standard output is the dedicated JSON-RPC transport medium:
 ## Consequences & Trade-offs
 
 - **Positive**: Seamless integration into Claude Desktop, Cursor, and Antigravity with zero configuration; automatic process lifecycle management.
-- **Enforced Invariant**: Code changes must never write diagnostic output to `stdout`. All logging must be verified via `tracing` directed to `stderr`.
+- **Enforced Invariant**: Code changes must never write diagnostic output to `stdout`. All logging must be verified via `tracing` directed to `stderr`. MCP handshake, ping, and notification rules must be strictly maintained.

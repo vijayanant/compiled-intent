@@ -164,4 +164,35 @@ async fn test_mcp_notification_emits_no_response() {
         resp.is_none(),
         "JSON-RPC notifications must never receive a response"
     );
+
+    // Also test arbitrary unknown notification without id
+    let unknown_notif = json!({
+        "jsonrpc": "2.0",
+        "method": "notifications/custom_event"
+    })
+    .to_string();
+    assert!(server.process_message(&unknown_notif).await.is_none());
+}
+
+#[tokio::test]
+async fn test_mcp_ping() {
+    // Standard MCP 2024-11-05 ping liveness check
+    let temp_dir = TempTestDir::new("mcp_ping");
+    let engine = create_test_engine(&temp_dir);
+    let server = McpServer::new(engine);
+
+    let ping_req = json!({
+        "jsonrpc": "2.0",
+        "id": "ping-42",
+        "method": "ping"
+    })
+    .to_string();
+
+    let resp_str = server.process_message(&ping_req).await.unwrap();
+    let resp: Value = serde_json::from_str(&resp_str).unwrap();
+
+    assert_eq!(resp["jsonrpc"], "2.0");
+    assert_eq!(resp["id"], "ping-42");
+    assert!(resp["result"].is_object());
+    assert!(resp.get("error").is_none());
 }

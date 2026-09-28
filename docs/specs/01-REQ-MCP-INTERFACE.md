@@ -32,16 +32,23 @@ The engine MUST expose a standard Model Context Protocol (MCP) server communicat
   }
   ```
 
-### 2.2 `notifications/initialized`
+### 2.2 `notifications/*`
 
-- Client acknowledgement notification. The server MUST process this notification and emit **no response**.
+- Client notifications (e.g. `notifications/initialized`, `notifications/cancelled`, or custom client telemetry) carry no `id` member.
+- Per JSON-RPC 2.0 §4.1, the server MUST process or ignore notifications and emit **strictly no response** on `stdout`.
 
-### 2.3 `tools/list`
+### 2.3 `ping`
+
+- Standard MCP liveness check request (MCP Specification 2024-11-05).
+- **Request**: `{ "jsonrpc": "2.0", "id": 1, "method": "ping" }`
+- **Response**: `{ "jsonrpc": "2.0", "id": 1, "result": {} }`
+
+### 2.4 `tools/list`
 
 - Emits the catalog of supported MCP tools.
 - Output MUST conform to the MCP Tools Specification containing schemas for `search`, `get_context`, and `index_directory`.
 
-### 2.4 `tools/call`
+### 2.5 `tools/call`
 
 - Dispatches tool invocations by name:
   - If tool succeeds: returns `{ "content": [{ "type": "text", "text": "..." }] }`.
