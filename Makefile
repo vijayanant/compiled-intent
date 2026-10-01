@@ -1,4 +1,4 @@
-.PHONY: build check test lint clean format format-check verify
+.PHONY: build check test lint clean format format-check verify eval
 
 build:
 	cargo build --release
@@ -22,6 +22,10 @@ lint: format-check
 verify: format-check
 	cargo clippy --all-targets --all-features -- -D warnings
 	cargo test
+
+eval:
+	cargo build -p intent
+	uv run --project evals pytest evals/ -s
 
 clean:
 	cargo clean

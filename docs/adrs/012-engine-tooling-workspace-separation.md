@@ -54,46 +54,35 @@ compiled-intent/
 │   ├── engine/                   # [CRATE: compitent-engine (Library)]
 │   │   ├── Cargo.toml            # Storage, AST chunking, embeddings, hybrid retrieval
 │   │   └── src/
-│   │       ├── lib.rs            # Public API: SearchEngine, IndexerPipeline, Storage
-│   │       ├── error.rs          # EngineError (LanceDB, Arrow, IO, Indexing)
-│   │       ├── config.rs         # EngineConfig (storage paths, embedding providers)
-│   │       ├── telemetry.rs      # Engine metrics & tracing
-│   │       ├── indexer/          # AST Parent-Child Chunker, FastEmbed/Ollama, Manifest
-│   │       │   ├── mod.rs
-│   │       │   ├── chunker.rs
-│   │       │   ├── embedder.rs
+│   │       ├── lib.rs            # Public API & re-exports (retrieval re-exported as engine)
+│   │       ├── config/           # EngineConfig (deterministic embedding & storage parameters)
+│   │       ├── error.rs          # CompitentError enum
+│   │       ├── indexer/          # Markdown AST chunking, Arrow RecordBatch building, and storage
+│   │       │   ├── arrow_builder.rs
 │   │       │   ├── manifest.rs
-│   │       │   └── pipeline.rs
-│   │       └── retrieval/        # LanceDB schema, Tantivy FTS, Hybrid Search & Scoring
-│   │           ├── mod.rs
-│   │           ├── schema.rs
-│   │           ├── lancedb.rs
-│   │           └── search.rs
+│   │       │   ├── markdown_chunker.rs
+│   │       │   ├── mod.rs
+│   │       │   └── storage.rs
+│   │       ├── retrieval/        # Core storage orchestration, LanceDB schema, Tantivy FTS, Hybrid Search
+│   │       │   └── mod.rs
+│   │       └── telemetry.rs      # Stderr-isolated tracing subscriber initialization
 │   │
 │   └── cli/                      # [CRATE: intent (Binary)]
 │       ├── Cargo.toml            # Depends on `compitent-engine`, Clap, Reqwest, Stdio
 │       └── src/
-│           ├── main.rs           # Entrypoint: Clap root router & default fallback to `serve`
-│           ├── config.rs         # CLI / User config (LLM configs, API keys, profiles)
-│           ├── llm/              # Generative LLM clients (Ollama, OpenAI streaming & chat)
-│           │   ├── mod.rs
-│           │   ├── client.rs
-│           │   └── types.rs
-│           ├── mcp/              # MCP JSON-RPC protocol daemon over stdio
-│           │   ├── mod.rs
-│           │   ├── server.rs
-│           │   └── protocol.rs
-│           ├── audit/            # Shift-Right Reactive Auditing & Git diff inspection
-│           │   ├── mod.rs
+│           ├── main.rs           # Entrypoint, CLI parsing, and subcommand dispatch
+│           ├── config.rs         # CliConfig and LlmConfig loading
+│           ├── audit/            # Native architectural guardian pre-commit / CI gate (ADR-011)
 │           │   ├── git.rs
-│           │   └── reporter.rs
-│           └── commands/         # Subcommand handlers
+│           │   ├── reporter.rs
+│           │   └── mod.rs
+│           ├── llm/              # Decoupled HTTP LLM inference client and prompt formatting (ADR-008/010)
+│           │   ├── client.rs
+│           │   ├── prompt.rs
+│           │   └── mod.rs
+│           └── mcp/              # Headless JSON-RPC 2.0 protocol handling and tool dispatch (ADR-005)
 │               ├── mod.rs
-│               ├── index.rs
-│               ├── search.rs
-│               ├── ask.rs
-│               ├── audit.rs
-│               └── serve.rs
+│               └── tools.rs
 ```
 
 ## The Five Architectural Boundary Invariants

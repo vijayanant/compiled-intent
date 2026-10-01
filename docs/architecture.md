@@ -72,32 +72,50 @@ flowchart TD
 
 ---
 
-## 3. Module Hierarchy & Separation of Concerns
+## 3. Workspace Hierarchy & Separation of Concerns
 
-The Rust codebase is partitioned into distinct submodules:
+Per [ADR-012](./adrs/012-engine-tooling-workspace-separation.md), the codebase is organized as a two-crate Cargo workspace partitioned into library (`compitent-engine`) and tooling CLI (`intent`):
 
 ```
-src/
-├── lib.rs              <-- Public library API and re-exports
-├── main.rs             <-- Unified canonical binary (intent)
-├── config/             <-- Configuration loading (config.toml) and CLI argument parsing
-├── engine/             <-- Core storage orchestration and hybrid search execution
-├── indexer/            <-- Markdown AST chunking, Arrow RecordBatch building, and manifest sync
-│   ├── arrow_builder.rs
-│   ├── manifest.rs
-│   ├── markdown_chunker.rs
-│   └── storage.rs
-├── mcp/                <-- Headless JSON-RPC 2.0 protocol handling and tool dispatch
-│   ├── mod.rs
-│   └── tools.rs
-└── telemetry.rs        <-- Stderr-isolated tracing subscriber initialization
+crates/
+├── engine/             <-- Library crate: compitent-engine (storage, chunking, retrieval)
+│   ├── Cargo.toml
+│   └── src/
+│       ├── lib.rs      <-- Public library API & re-exports (retrieval re-exported as engine)
+│       ├── config/     <-- EngineConfig (deterministic embedding & storage parameters)
+│       ├── error.rs    <-- CompitentError enum
+│       ├── indexer/    <-- Markdown AST chunking, Arrow RecordBatch building, and storage
+│       │   ├── arrow_builder.rs
+│       │   ├── manifest.rs
+│       │   ├── markdown_chunker.rs
+│       │   └── storage.rs
+│       ├── retrieval/  <-- Core storage orchestration, LanceDB schema, Tantivy FTS, Hybrid Search
+│       └── telemetry.rs<-- Stderr-isolated tracing subscriber initialization
+└── cli/                <-- Binary crate: intent (canonical unified CLI & MCP daemon per ADR-006)
+    ├── Cargo.toml
+    └── src/
+        ├── main.rs     <-- Entrypoint, CLI parsing, dispatch
+        ├── config.rs   <-- CliConfig and LlmConfig loading
+        ├── audit/      <-- Native architectural guardian pre-commit / CI gate (ADR-011)
+        │   ├── git.rs
+        │   ├── reporter.rs
+        │   └── mod.rs
+        ├── llm/        <-- Decoupled HTTP LLM inference client and prompt formatting (ADR-008/010)
+        │   ├── client.rs
+        │   ├── prompt.rs
+        │   └── mod.rs
+        └── mcp/        <-- Headless JSON-RPC 2.0 protocol handling and tool dispatch (ADR-005)
+            ├── mod.rs
+            └── tools.rs
 ```
 
 ### Separation Invariants
 
-1. **The Indexer MUST NOT know about MCP**.
-2. **The MCP layer MUST NOT directly access LanceDB or filesystem tables**; it must route all calls through the core `engine` or `indexer`.
-3. **The Core Engine exposes pure Rust data structures** independent of JSON-RPC or CLI representations.
+1. **Strict Dependency Directionality**: `crates/cli` depends on `crates/engine`. `crates/engine` has zero knowledge of Git, terminal formatting, or generative LLMs.
+2. **Determinism vs. Stochasticity**: `crates/engine` is strictly deterministic (embeddings and greedy search). Stochastic sampling (`temperature`), LLM prompts, and chat completion logic belong exclusively to `crates/cli`.
+3. **The Indexer MUST NOT know about MCP or CLI**: Storage and chunking operate independently of transport protocols.
+4. **The MCP layer MUST NOT directly access LanceDB or filesystem tables**: It must route all operations through `compitent-engine`.
+5. **The Core Engine exposes pure Rust data structures** independent of JSON-RPC or CLI representations.
 
 ---
 
