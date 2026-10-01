@@ -2,44 +2,6 @@ use compitent_engine::error::CompitentError;
 use serde_json::json;
 use std::io::Write;
 
-/// Formats the grounding system prompt and context-enriched user prompt.
-pub fn build_grounding_prompt(question: &str, contexts: &[serde_json::Value]) -> (String, String) {
-    let system_prompt = "You are a helpful documentation assistant for this codebase.\n\
-        Answer the user's question accurately using ONLY the provided documentation context snippets.\n\n\
-        Rules:\n\
-        - Base your answer directly on the provided context.\n\
-        - If the context does not contain enough information to answer the question, state: \
-        \"The documentation does not currently specify this.\" Do not make up facts or guess.\n\
-        - When appropriate, refer to the document filenames or section headings mentioned in the context."
-        .to_string();
-
-    let mut context_body = String::new();
-    for (i, item) in contexts.iter().enumerate() {
-        let chunk_id = item
-            .get("chunk_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown");
-        let context_text = item.get("context").and_then(|v| v.as_str()).unwrap_or("");
-        let score = item.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0);
-
-        context_body.push_str(&format!(
-            "--- Document [{}] (id: {}, relevance: {:.2}) ---\n{}\n\n",
-            i + 1,
-            chunk_id,
-            score,
-            context_text
-        ));
-    }
-
-    let user_prompt = format!(
-        "Documentation Context:\n{}\n\nQuestion:\n{}",
-        context_body.trim_end(),
-        question
-    );
-
-    (system_prompt, user_prompt)
-}
-
 /// Extracts text content from a streaming Ollama newline-delimited JSON line.
 pub fn parse_ollama_chunk(line: &str) -> Option<String> {
     let val: serde_json::Value = serde_json::from_str(line).ok()?;
@@ -62,6 +24,13 @@ pub fn parse_openai_chunk(line: &str) -> Option<String> {
         .and_then(|d| d.get("content"))
         .and_then(|c| c.as_str())
         .map(|s| s.to_string())
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChatCompletionResponse {
+    pub content: String,
+    pub prompt_eval_count: Option<u64>,
+    pub eval_count: Option<u64>,
 }
 
 /// Builds the appropriate chat request payload based on the endpoint flavor.
@@ -159,26 +128,31 @@ async fn consume_stream<W: Write>(
     Ok(full_output)
 }
 
+#[derive(Debug, Clone)]
+pub struct ChatParams<'a> {
+    pub endpoint: &'a str,
+    pub model: &'a str,
+    pub temperature: f32,
+    pub system_prompt: &'a str,
+    pub user_prompt: &'a str,
+}
+
 /// Streams a chat completion from the decoupled LLM endpoint to the given writer.
 pub async fn stream_chat_completion<W: Write>(
     client: &reqwest::Client,
-    endpoint: &str,
-    model: &str,
-    temperature: f32,
-    system_prompt: &str,
-    user_prompt: &str,
+    params: &ChatParams<'_>,
     writer: W,
 ) -> Result<String, CompitentError> {
     let payload = build_chat_payload(
-        endpoint,
-        model,
-        temperature,
-        system_prompt,
-        user_prompt,
+        params.endpoint,
+        params.model,
+        params.temperature,
+        params.system_prompt,
+        params.user_prompt,
         true,
     );
-    let is_openai = endpoint.contains("/chat/completions");
-    let response = send_chat_request(client, endpoint, &payload).await?;
+    let is_openai = params.endpoint.contains("/chat/completions");
+    let response = send_chat_request(client, params.endpoint, &payload).await?;
     consume_stream(response, is_openai, writer).await
 }
 
@@ -212,41 +186,54 @@ pub fn parse_chat_response(resp_val: &serde_json::Value) -> Option<String> {
     None
 }
 
-/// Completes a non-streaming chat request against the decoupled LLM endpoint.
-pub async fn complete_chat(
-    client: &reqwest::Client,
-    endpoint: &str,
-    model: &str,
-    temperature: f32,
-    system_prompt: &str,
-    user_prompt: &str,
-) -> Result<String, CompitentError> {
-    let payload = if endpoint.contains("/api/generate") {
-        let combined_prompt = if system_prompt.is_empty() {
-            user_prompt.to_string()
+fn build_completion_payload(params: &ChatParams<'_>) -> serde_json::Value {
+    if params.endpoint.contains("/api/generate") {
+        let combined_prompt = if params.system_prompt.is_empty() {
+            params.user_prompt.to_string()
         } else {
-            format!("{}\n\n{}", system_prompt, user_prompt)
+            format!("{}\n\n{}", params.system_prompt, params.user_prompt)
         };
         json!({
-            "model": model,
+            "model": params.model,
             "prompt": combined_prompt,
             "stream": false,
             "options": {
-                "temperature": temperature,
+                "temperature": params.temperature,
             }
         })
     } else {
         build_chat_payload(
-            endpoint,
-            model,
-            temperature,
-            system_prompt,
-            user_prompt,
+            params.endpoint,
+            params.model,
+            params.temperature,
+            params.system_prompt,
+            params.user_prompt,
             false,
         )
-    };
+    }
+}
 
-    let response = send_chat_request(client, endpoint, &payload).await?;
+fn extract_token_metrics(resp_val: &serde_json::Value) -> (Option<u64>, Option<u64>) {
+    if let Some(usage) = resp_val.get("usage") {
+        (
+            usage.get("prompt_tokens").and_then(|v| v.as_u64()),
+            usage.get("completion_tokens").and_then(|v| v.as_u64()),
+        )
+    } else {
+        (
+            resp_val.get("prompt_eval_count").and_then(|v| v.as_u64()),
+            resp_val.get("eval_count").and_then(|v| v.as_u64()),
+        )
+    }
+}
+
+/// Completes a non-streaming chat request against the decoupled LLM endpoint.
+pub async fn complete_chat(
+    client: &reqwest::Client,
+    params: &ChatParams<'_>,
+) -> Result<ChatCompletionResponse, CompitentError> {
+    let payload = build_completion_payload(params);
+    let response = send_chat_request(client, params.endpoint, &payload).await?;
     let resp_val: serde_json::Value = response.json().await.map_err(|e| {
         CompitentError::Network(format!(
             "Failed to parse JSON response from LLM endpoint: {}",
@@ -254,30 +241,25 @@ pub async fn complete_chat(
         ))
     })?;
 
-    parse_chat_response(&resp_val).ok_or_else(|| {
+    let content = parse_chat_response(&resp_val).ok_or_else(|| {
         CompitentError::Internal(format!(
             "Unexpected JSON response format from LLM endpoint: {}",
             resp_val
         ))
+    })?;
+
+    let (prompt_eval_count, eval_count) = extract_token_metrics(&resp_val);
+
+    Ok(ChatCompletionResponse {
+        content,
+        prompt_eval_count,
+        eval_count,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_build_grounding_prompt() {
-        let contexts = vec![json!({
-            "chunk_id": "test.md_b0",
-            "context": "LanceDB uses Apache Arrow format.",
-            "score": 0.95
-        })];
-        let (sys, user) = build_grounding_prompt("What format does LanceDB use?", &contexts);
-        assert!(sys.contains("documentation assistant"));
-        assert!(user.contains("LanceDB uses Apache Arrow format."));
-        assert!(user.contains("What format does LanceDB use?"));
-    }
 
     #[test]
     fn test_parse_ollama_chunk() {

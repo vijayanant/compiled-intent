@@ -1,8 +1,8 @@
 use clap::{Parser, Subcommand};
-use compitent_engine::config::EngineConfig;
 use compitent_engine::engine::CompitentEngine;
 use compitent_engine::telemetry;
 use intent::audit;
+use intent::config::CliConfig;
 use intent::llm;
 use intent::mcp::McpServer;
 
@@ -94,28 +94,20 @@ pub enum Commands {
         #[arg(long)]
         namespace: Option<String>,
         /// Maximum candidate chunks to retrieve before collapsing
-        #[arg(long, default_value_t = 3)]
+        #[arg(long, default_value_t = 6)]
         limit: usize,
         /// Minimum normalized confidence score floor in [0.0, 1.0]
         #[arg(long)]
         min_score: Option<f32>,
+        /// Relative score tolerance in [0.0, 1.0]
+        #[arg(long, default_value_t = 0.15)]
+        score_tolerance: f32,
         /// Fail with exit code 1 if LLM endpoint is unreachable
         #[arg(long)]
         strict: bool,
     },
     /// Start the Model Context Protocol (MCP) server on stdio (default)
     Serve,
-}
-
-struct AskArgs<'a> {
-    question: &'a str,
-    model: Option<&'a str>,
-    endpoint: Option<&'a str>,
-    limit: usize,
-    min_score: f32,
-    score_tolerance: f32,
-    mode: &'a str,
-    no_sources: bool,
 }
 
 fn print_sources(results: &[serde_json::Value]) {
@@ -131,13 +123,25 @@ fn print_sources(results: &[serde_json::Value]) {
     }
 }
 
+async fn handle_index(engine: &CompitentEngine, path: &str) -> anyhow::Result<()> {
+    tracing::info!("Indexing directory: {}", path);
+    compitent_engine::indexer::index_adrs(engine, &[path]).await?;
+    tracing::info!("Indexing complete!");
+    Ok(())
+}
+
 async fn handle_search(
     engine: &CompitentEngine,
     query: &str,
     mode: &str,
     limit: usize,
-    filters: compitent_engine::engine::SearchFilterOptions,
+    min_score: Option<f32>,
+    score_tolerance: Option<f32>,
 ) -> anyhow::Result<()> {
+    let filters = compitent_engine::engine::SearchFilterOptions {
+        min_score,
+        score_tolerance,
+    };
     tracing::info!("Searching for: {} (Mode: {})", query, mode);
     let results = engine
         .search_with_options(query, limit, mode, filters)
@@ -146,10 +150,21 @@ async fn handle_search(
     Ok(())
 }
 
+struct AskDispatchArgs<'a> {
+    question: &'a str,
+    model: Option<&'a str>,
+    endpoint: Option<&'a str>,
+    limit: usize,
+    min_score: f32,
+    score_tolerance: f32,
+    mode: &'a str,
+    no_sources: bool,
+}
+
 async fn handle_ask(
     engine: &CompitentEngine,
-    config: &EngineConfig,
-    args: &AskArgs<'_>,
+    config: &CliConfig,
+    args: AskDispatchArgs<'_>,
 ) -> anyhow::Result<()> {
     let filters = compitent_engine::engine::SearchFilterOptions {
         min_score: Some(args.min_score),
@@ -174,16 +189,15 @@ async fn handle_ask(
     let stdout = std::io::stdout();
     let mut handle = stdout.lock();
 
-    llm::stream_chat_completion(
-        &client,
-        target_endpoint,
-        target_model,
-        config.llm.temperature,
-        &sys_prompt,
-        &user_prompt,
-        &mut handle,
-    )
-    .await?;
+    let params = llm::ChatParams {
+        endpoint: target_endpoint,
+        model: target_model,
+        temperature: config.llm.temperature,
+        system_prompt: &sys_prompt,
+        user_prompt: &user_prompt,
+    };
+
+    llm::stream_chat_completion(&client, &params, &mut handle).await?;
 
     println!();
     if !args.no_sources {
@@ -192,39 +206,9 @@ async fn handle_ask(
     Ok(())
 }
 
-async fn handle_index_dispatch(engine: &CompitentEngine, path: &str) -> anyhow::Result<()> {
-    tracing::info!("Indexing directory: {}", path);
-    compitent_engine::indexer::index_adrs(engine, &[path]).await?;
-    tracing::info!("Indexing complete!");
-    Ok(())
-}
-
-async fn handle_search_dispatch(
+async fn handle_audit(
     engine: &CompitentEngine,
-    query: &str,
-    mode: &str,
-    limit: usize,
-    min_score: Option<f32>,
-    score_tolerance: Option<f32>,
-) -> anyhow::Result<()> {
-    let filters = compitent_engine::engine::SearchFilterOptions {
-        min_score,
-        score_tolerance,
-    };
-    handle_search(engine, query, mode, limit, filters).await
-}
-
-async fn handle_ask_dispatch(
-    engine: &CompitentEngine,
-    config: &EngineConfig,
-    args: AskArgs<'_>,
-) -> anyhow::Result<()> {
-    handle_ask(engine, config, &args).await
-}
-
-async fn handle_audit_dispatch(
-    engine: &CompitentEngine,
-    config: &EngineConfig,
+    config: &CliConfig,
     args: audit::AuditArgs<'_>,
 ) -> anyhow::Result<()> {
     let passed = audit::handle_audit(engine, config, &args).await?;
@@ -234,10 +218,10 @@ async fn handle_audit_dispatch(
     Ok(())
 }
 
-async fn dispatch_ask_variant(
+async fn dispatch_ask(
     cmd: &Commands,
     engine: &CompitentEngine,
-    config: &EngineConfig,
+    config: &CliConfig,
 ) -> anyhow::Result<()> {
     if let Commands::Ask {
         question,
@@ -250,7 +234,7 @@ async fn dispatch_ask_variant(
         no_sources,
     } = cmd
     {
-        let args = AskArgs {
+        let args = AskDispatchArgs {
             question,
             model: model.as_deref(),
             endpoint: endpoint.as_deref(),
@@ -260,16 +244,16 @@ async fn dispatch_ask_variant(
             mode,
             no_sources: *no_sources,
         };
-        handle_ask_dispatch(engine, config, args).await
+        handle_ask(engine, config, args).await
     } else {
         Ok(())
     }
 }
 
-async fn dispatch_audit_variant(
+async fn dispatch_audit(
     cmd: &Commands,
     engine: &CompitentEngine,
-    config: &EngineConfig,
+    config: &CliConfig,
 ) -> anyhow::Result<()> {
     if let Commands::Audit {
         message,
@@ -280,6 +264,7 @@ async fn dispatch_audit_variant(
         namespace,
         limit,
         min_score,
+        score_tolerance,
         strict,
     } = cmd
     {
@@ -292,9 +277,10 @@ async fn dispatch_audit_variant(
             namespace: namespace.as_deref(),
             limit: *limit,
             min_score: *min_score,
+            score_tolerance: Some(*score_tolerance),
             strict: *strict,
         };
-        handle_audit_dispatch(engine, config, args).await
+        handle_audit(engine, config, args).await
     } else {
         Ok(())
     }
@@ -303,21 +289,19 @@ async fn dispatch_audit_variant(
 async fn dispatch_command(
     cli: &Cli,
     engine: CompitentEngine,
-    config: &EngineConfig,
+    config: &CliConfig,
 ) -> anyhow::Result<()> {
     match &cli.command {
-        Some(Commands::Index { path }) => handle_index_dispatch(&engine, path).await,
+        Some(Commands::Index { path }) => handle_index(&engine, path).await,
         Some(Commands::Search {
             query,
             mode,
             limit,
             min_score,
             score_tolerance,
-        }) => {
-            handle_search_dispatch(&engine, query, mode, *limit, *min_score, *score_tolerance).await
-        }
-        Some(cmd @ Commands::Ask { .. }) => dispatch_ask_variant(cmd, &engine, config).await,
-        Some(cmd @ Commands::Audit { .. }) => dispatch_audit_variant(cmd, &engine, config).await,
+        }) => handle_search(&engine, query, mode, *limit, *min_score, *score_tolerance).await,
+        Some(cmd @ Commands::Ask { .. }) => dispatch_ask(cmd, &engine, config).await,
+        Some(cmd @ Commands::Audit { .. }) => dispatch_audit(cmd, &engine, config).await,
         Some(Commands::Serve) | None => {
             tracing::info!("Compitent Engine: Booting System Domain (MCP Stdio)...");
             let server = McpServer::new(engine);
@@ -361,9 +345,9 @@ fn detect_and_set_project_root(custom_config: &Option<String>) {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     detect_and_set_project_root(&cli.config);
-    let config = EngineConfig::load(cli.config.clone());
+    let config = CliConfig::load(cli.config.clone());
     telemetry::init_tracing(cli.verbose, Some(&config.log_level));
-    let engine = CompitentEngine::new(config.clone());
+    let engine = CompitentEngine::new(config.engine.clone());
     dispatch_command(&cli, engine, &config).await
 }
 
@@ -523,8 +507,9 @@ mod tests {
                 model: None,
                 endpoint: None,
                 namespace: None,
-                limit: 3,
+                limit: 6,
                 min_score: None,
+                score_tolerance: 0.15,
                 strict: false,
             })
         );
@@ -545,6 +530,8 @@ mod tests {
             "adrs",
             "--limit",
             "5",
+            "--score-tolerance",
+            "0.15",
             "--strict",
         ])
         .unwrap();
@@ -559,6 +546,7 @@ mod tests {
                 namespace: Some("adrs".to_string()),
                 limit: 5,
                 min_score: None,
+                score_tolerance: 0.15,
                 strict: true,
             })
         );

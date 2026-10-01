@@ -1,4 +1,4 @@
-use intent::llm::stream_chat_completion;
+use intent::llm::{stream_chat_completion, ChatParams};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
@@ -25,17 +25,17 @@ async fn test_streaming_chat_completion_mock_ollama() {
     let endpoint = format!("http://{}/api/chat", addr);
     let mut writer = Vec::new();
 
-    let full_text = stream_chat_completion(
-        &client,
-        &endpoint,
-        "gemma3:12b",
-        0.0,
-        "System prompt",
-        "User question",
-        &mut writer,
-    )
-    .await
-    .unwrap();
+    let params = ChatParams {
+        endpoint: &endpoint,
+        model: "gemma3:12b",
+        temperature: 0.0,
+        system_prompt: "System prompt",
+        user_prompt: "User question",
+    };
+
+    let full_text = stream_chat_completion(&client, &params, &mut writer)
+        .await
+        .unwrap();
 
     assert_eq!(full_text, "LanceDB is fast.");
     assert_eq!(String::from_utf8(writer).unwrap(), "LanceDB is fast.");
@@ -47,17 +47,17 @@ async fn test_streaming_chat_completion_unreachable_endpoint() {
     let endpoint = "http://127.0.0.1:1/api/chat";
     let mut writer = Vec::new();
 
-    let err = stream_chat_completion(
-        &client,
+    let params = ChatParams {
         endpoint,
-        "gemma3:12b",
-        0.0,
-        "System prompt",
-        "User question",
-        &mut writer,
-    )
-    .await
-    .unwrap_err();
+        model: "gemma3:12b",
+        temperature: 0.0,
+        system_prompt: "System prompt",
+        user_prompt: "User question",
+    };
+
+    let err = stream_chat_completion(&client, &params, &mut writer)
+        .await
+        .unwrap_err();
 
     let err_msg = err.to_string();
     assert!(err_msg.contains("Failed to connect to LLM endpoint"));
