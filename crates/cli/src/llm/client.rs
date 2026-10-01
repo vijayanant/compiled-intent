@@ -38,6 +38,7 @@ fn build_chat_payload(
     endpoint: &str,
     model: &str,
     temperature: f32,
+    num_ctx: usize,
     system_prompt: &str,
     user_prompt: &str,
     stream: bool,
@@ -61,6 +62,7 @@ fn build_chat_payload(
             "stream": stream,
             "options": {
                 "temperature": temperature,
+                "num_ctx": num_ctx,
             }
         })
     }
@@ -133,6 +135,7 @@ pub struct ChatParams<'a> {
     pub endpoint: &'a str,
     pub model: &'a str,
     pub temperature: f32,
+    pub num_ctx: usize,
     pub system_prompt: &'a str,
     pub user_prompt: &'a str,
 }
@@ -147,6 +150,7 @@ pub async fn stream_chat_completion<W: Write>(
         params.endpoint,
         params.model,
         params.temperature,
+        params.num_ctx,
         params.system_prompt,
         params.user_prompt,
         true,
@@ -199,6 +203,7 @@ fn build_completion_payload(params: &ChatParams<'_>) -> serde_json::Value {
             "stream": false,
             "options": {
                 "temperature": params.temperature,
+                "num_ctx": params.num_ctx,
             }
         })
     } else {
@@ -206,6 +211,7 @@ fn build_completion_payload(params: &ChatParams<'_>) -> serde_json::Value {
             params.endpoint,
             params.model,
             params.temperature,
+            params.num_ctx,
             params.system_prompt,
             params.user_prompt,
             false,

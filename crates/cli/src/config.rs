@@ -3,11 +3,17 @@ use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 use std::path::PathBuf;
 
+fn default_num_ctx() -> usize {
+    16384
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct LlmConfig {
     pub endpoint: String,
     pub model: String,
     pub temperature: f32,
+    #[serde(default = "default_num_ctx")]
+    pub num_ctx: usize,
 }
 
 impl Default for LlmConfig {
@@ -16,6 +22,7 @@ impl Default for LlmConfig {
             endpoint: "http://localhost:11434/api/chat".to_string(),
             model: "gemma3:12b".to_string(),
             temperature: 0.0,
+            num_ctx: default_num_ctx(),
         }
     }
 }
@@ -119,6 +126,7 @@ mod tests {
         assert_eq!(config.lancedb_path, ".intent/lancedb");
         assert_eq!(config.llm.model, "gemma3:12b");
         assert_eq!(config.llm.endpoint, "http://localhost:11434/api/chat");
+        assert_eq!(config.llm.num_ctx, 16384);
     }
 
     #[test]

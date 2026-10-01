@@ -105,6 +105,9 @@ pub enum Commands {
         /// Fail with exit code 1 if LLM endpoint is unreachable
         #[arg(long)]
         strict: bool,
+        /// Context window width in tokens for LLM inference (default: 16384)
+        #[arg(long)]
+        num_ctx: Option<usize>,
     },
     /// Start the Model Context Protocol (MCP) server on stdio (default)
     Serve,
@@ -193,6 +196,7 @@ async fn handle_ask(
         endpoint: target_endpoint,
         model: target_model,
         temperature: config.llm.temperature,
+        num_ctx: config.llm.num_ctx,
         system_prompt: &sys_prompt,
         user_prompt: &user_prompt,
     };
@@ -266,6 +270,7 @@ async fn dispatch_audit(
         min_score,
         score_tolerance,
         strict,
+        num_ctx,
     } = cmd
     {
         let args = audit::AuditArgs {
@@ -279,6 +284,7 @@ async fn dispatch_audit(
             min_score: *min_score,
             score_tolerance: Some(*score_tolerance),
             strict: *strict,
+            num_ctx: *num_ctx,
         };
         handle_audit(engine, config, args).await
     } else {
@@ -511,6 +517,7 @@ mod tests {
                 min_score: None,
                 score_tolerance: 0.15,
                 strict: false,
+                num_ctx: None,
             })
         );
     }
@@ -548,6 +555,7 @@ mod tests {
                 min_score: None,
                 score_tolerance: 0.15,
                 strict: true,
+                num_ctx: None,
             })
         );
     }

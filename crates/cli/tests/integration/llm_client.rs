@@ -29,6 +29,7 @@ async fn test_streaming_chat_completion_mock_ollama() {
         endpoint: &endpoint,
         model: "gemma3:12b",
         temperature: 0.0,
+        num_ctx: 16384,
         system_prompt: "System prompt",
         user_prompt: "User question",
     };
@@ -51,6 +52,7 @@ async fn test_streaming_chat_completion_unreachable_endpoint() {
         endpoint,
         model: "gemma3:12b",
         temperature: 0.0,
+        num_ctx: 16384,
         system_prompt: "System prompt",
         user_prompt: "User question",
     };

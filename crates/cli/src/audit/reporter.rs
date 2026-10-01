@@ -21,6 +21,7 @@ pub struct AuditArgs<'a> {
     pub min_score: Option<f32>,
     pub score_tolerance: Option<f32>,
     pub strict: bool,
+    pub num_ctx: Option<usize>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -131,6 +132,13 @@ pub(super) fn print_unconstrained_pass() {
 
 pub(super) fn print_invariants_count(count: usize) {
     println!("  Retrieved {} governing invariant sections.", count);
+}
+
+pub(super) fn print_context_metrics(prompt_tokens: u64, eval_tokens: u64, num_ctx: usize) {
+    println!(
+        "  Prompt evaluated: {} tokens (context window: {}, generated: {} tokens).",
+        prompt_tokens, num_ctx, eval_tokens
+    );
 }
 
 #[cfg(test)]

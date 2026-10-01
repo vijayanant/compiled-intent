@@ -122,7 +122,18 @@ async fn fetch_and_report_invariants(
     Ok(Some(results))
 }
 
-fn evaluate_and_emit_verdict(completion: &llm::ChatCompletionResponse) -> bool {
+fn evaluate_and_emit_verdict(
+    completion: &llm::ChatCompletionResponse,
+    target_num_ctx: usize,
+) -> bool {
+    if let Some(prompt_tokens) = completion.prompt_eval_count {
+        reporter::print_context_metrics(
+            prompt_tokens,
+            completion.eval_count.unwrap_or(0),
+            target_num_ctx,
+        );
+    }
+
     let parsed = reporter::parse_audit_verdict(&completion.content);
     reporter::emit_audit_verdict(&parsed)
 }
@@ -152,6 +163,7 @@ pub async fn handle_audit(
     let headline = final_commit_msg.lines().next().unwrap_or(&final_commit_msg);
     let target_endpoint = args.endpoint.unwrap_or(&config.llm.endpoint);
     let target_model = args.model.unwrap_or(&config.llm.model);
+    let target_num_ctx = args.num_ctx.unwrap_or(config.llm.num_ctx);
 
     reporter::print_audit_banner(headline, target_model);
 
@@ -173,6 +185,7 @@ pub async fn handle_audit(
         endpoint: target_endpoint,
         model: target_model,
         temperature: 0.0,
+        num_ctx: target_num_ctx,
         system_prompt: &sys_prompt,
         user_prompt: &user_prompt,
     };
@@ -182,7 +195,7 @@ pub async fn handle_audit(
         None => return Ok(false),
     };
 
-    Ok(evaluate_and_emit_verdict(&completion))
+    Ok(evaluate_and_emit_verdict(&completion, target_num_ctx))
 }
 
 #[cfg(test)]
