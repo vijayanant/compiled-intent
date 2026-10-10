@@ -6,6 +6,7 @@ use compiled_intent::telemetry;
 
 #[derive(Parser, Debug, PartialEq)]
 #[command(name = "intent")]
+#[command(version)]
 #[command(about = "The Universal Semantic Filesystem CLI & MCP Server", long_about = None)]
 pub struct Cli {
     /// Optional path to config file
@@ -129,5 +130,11 @@ mod tests {
         let cli = Cli::try_parse_from(["intent", "--config", "custom.toml", "serve"]).unwrap();
         assert_eq!(cli.config, Some("custom.toml".to_string()));
         assert_eq!(cli.command, Some(Commands::Serve));
+    }
+
+    #[test]
+    fn test_cli_version_flag() {
+        let err = Cli::try_parse_from(["intent", "--version"]).unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::DisplayVersion);
     }
 }
