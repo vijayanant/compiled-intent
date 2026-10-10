@@ -9,7 +9,7 @@
 //! - REQ-01: MCP Interface
 
 use super::common::{create_test_engine, TempTestDir};
-use compiled_intent::mcp::McpServer;
+use intent::mcp::McpServer;
 use serde_json::{json, Value};
 
 #[tokio::test]

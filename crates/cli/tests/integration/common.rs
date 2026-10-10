@@ -1,5 +1,5 @@
-use compiled_intent::config::EngineConfig;
-use compiled_intent::engine::CompitentEngine;
+use compitent_engine::config::EngineConfig;
+use compitent_engine::engine::CompitentEngine;
 use std::fs;
 use std::path::PathBuf;
 
@@ -19,12 +19,6 @@ impl TempTestDir {
             std::env::temp_dir().join(format!("{}_{}_{}", prefix, std::process::id(), nanos));
         fs::create_dir_all(&path).expect("Failed to create temp test dir");
         Self { path }
-    }
-
-    pub fn sub_dir(&self, name: &str) -> PathBuf {
-        let sub = self.path.join(name);
-        fs::create_dir_all(&sub).expect("Failed to create sub dir");
-        sub
     }
 
     pub fn write_file(&self, filename: &str, content: &str) -> PathBuf {

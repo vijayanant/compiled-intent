@@ -1,10 +1,17 @@
-[package]
-name = "compiled-intent"
+[workspace]
+members = [
+    "crates/engine",
+    "crates/cli",
+]
+resolver = "2"
+
+[workspace.package]
 version = "0.2.0-dev"
 edition = "2021"
-description = "A Universal Semantic Memory Layer for AI Agents"
+authors = ["Vijay Anant <vijay.hassan@gmail.com>"]
+license = "MIT OR Apache-2.0"
 
-[dependencies]
+[workspace.dependencies]
 tokio = { version = "1.42.0", features = ["full"] }
 anyhow = "1.0"
 thiserror = "2.0"
@@ -12,23 +19,19 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.134"
+serde_yaml = "0.9"
 pulldown-cmark = "0.13.4"
 lancedb = "0.37.1"
+lance-index = "10.0.0"
 arrow = "58.4.0"
 sha2 = "0.10"
-serde_yaml = "0.9"
 futures = "0.3.34"
 toml = "1.1.4"
 reqwest = { version = "0.13.4", features = ["json"] }
 clap = { version = "4.6.6", features = ["derive"] }
 walkdir = "2.5.0"
-lance-index = "10.0.0"
 
-[[bin]]
-name = "intent"
-path = "src/main.rs"
-
-[lints.clippy]
+[workspace.lints.clippy]
 cognitive_complexity = "warn"
 too_many_arguments = "warn"
 too_many_lines = "warn"
@@ -41,4 +44,3 @@ strip = true
 lto = "thin"
 codegen-units = 1
 panic = "abort"
-

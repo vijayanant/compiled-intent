@@ -1,11 +1,11 @@
-pub mod tools;
+mod tools;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
 
-use crate::engine::CompitentEngine;
-use crate::error::CompitentError;
+use compitent_engine::engine::CompitentEngine;
+use compitent_engine::error::CompitentError;
 
 // --- MCP Protocol Types ---
 

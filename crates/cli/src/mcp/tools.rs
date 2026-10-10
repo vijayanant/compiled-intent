@@ -1,4 +1,4 @@
-use crate::engine::CompitentEngine;
+use compitent_engine::engine::CompitentEngine;
 use serde_json::{json, Value};
 
 const DEFAULT_SEARCH_LIMIT: usize = 3;
@@ -83,7 +83,7 @@ async fn handle_search(engine: &CompitentEngine, args: &Value) -> Result<Value, 
         score_tolerance
     );
 
-    let filters = crate::engine::SearchFilterOptions {
+    let filters = compitent_engine::engine::SearchFilterOptions {
         min_score,
         score_tolerance,
     };
@@ -138,7 +138,7 @@ async fn handle_index_directory(
         .unwrap_or("");
     tracing::info!("LLM invoked 'index_directory' for path: {}", dir);
 
-    crate::indexer::index_adrs(engine, &[dir])
+    compitent_engine::indexer::index_adrs(engine, &[dir])
         .await
         .map(|_| {
             json!({
@@ -167,7 +167,7 @@ pub async fn dispatch_tool_call(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::EngineConfig;
+    use compitent_engine::config::EngineConfig;
 
     #[tokio::test]
     async fn test_dispatch_tool_call_validation_and_errors() {
